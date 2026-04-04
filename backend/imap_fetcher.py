@@ -1,6 +1,7 @@
 import email
 import imaplib
 import logging
+import uuid
 from datetime import datetime, timezone
 from email.header import decode_header
 
@@ -103,15 +104,18 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                 if parsed is None:
                     continue
 
+                # Generate a unique report_id when the XML lacks one
+                if not parsed.report_id:
+                    parsed.report_id = f"auto-{uuid.uuid4().hex[:12]}"
+
                 # Check for duplicate by report_id
-                if parsed.report_id:
-                    existing = await db.execute(
-                        select(DmarcReport).where(
-                            DmarcReport.report_id_str == parsed.report_id
-                        )
+                existing = await db.execute(
+                    select(DmarcReport).where(
+                        DmarcReport.report_id_str == parsed.report_id
                     )
-                    if existing.scalar_one_or_none() is not None:
-                        continue
+                )
+                if existing.scalar_one_or_none() is not None:
+                    continue
 
                 report = _create_report(parsed, mailbox.id, subject, msg_date)
                 db.add(report)
