@@ -1,0 +1,46 @@
+const BASE = "/api";
+
+async function request(path, options = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { "Content-Type": "application/json", ...options.headers },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export const api = {
+  // Dashboard
+  getStats: () => request("/dashboard/stats"),
+  getTimeline: () => request("/dashboard/timeline"),
+
+  // Reports
+  getReports: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.domain) qs.set("domain", params.domain);
+    if (params.date_from) qs.set("date_from", params.date_from);
+    if (params.date_to) qs.set("date_to", params.date_to);
+    const query = qs.toString();
+    return request(`/reports${query ? `?${query}` : ""}`);
+  },
+  getReport: (id) => request(`/reports/${id}`),
+
+  // DNS
+  checkDns: (domain, dkim_selector) =>
+    request("/dns/check", {
+      method: "POST",
+      body: JSON.stringify({ domain, dkim_selector: dkim_selector || null }),
+    }),
+
+  // Mailboxes
+  getMailboxes: () => request("/mailboxes"),
+  createMailbox: (data) =>
+    request("/mailboxes", { method: "POST", body: JSON.stringify(data) }),
+  updateMailbox: (id, data) =>
+    request(`/mailboxes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteMailbox: (id) => request(`/mailboxes/${id}`, { method: "DELETE" }),
+  fetchMailbox: (id) => request(`/mailboxes/${id}/fetch`, { method: "POST" }),
+};
