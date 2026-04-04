@@ -4,6 +4,9 @@ DMARC report viewer. Connects to an IMAP mailbox, pulls aggregate reports, parse
 
 I built this because reading raw DMARC XML is miserable and most existing tools are either expensive SaaS or abandoned PHP projects from 2016.
 
+<img width="2165" height="1283" alt="image" src="https://github.com/user-attachments/assets/f8b703d4-ebcc-4f11-b965-2375d8275a51" />
+
+
 ## What it does
 
 - Connects to any IMAP mailbox and grabs DMARC RUA attachments (`.xml`, `.xml.gz`, `.zip`)
