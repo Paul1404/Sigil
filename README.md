@@ -119,7 +119,62 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 [![Deploy on Railway](https://railway.app/button.svg)](#)
 
-1. Create a new Railway project
-2. Add a PostgreSQL service
-3. Deploy this repo with the included `Dockerfile` and `railway.toml`
-4. Set the environment variables listed above in the Railway dashboard
+### Prerequisites
+
+- A [Railway](https://railway.app) account (free tier available)
+- This repository pushed to a GitHub account
+
+### Step 1 -- Create a New Railway Project
+
+1. Log in to [railway.app](https://railway.app) and click **New Project**.
+2. Select **Deploy from GitHub repo**.
+3. Connect your GitHub account if you haven't already, then select the **Sigil** repository.
+4. Railway will detect the `Dockerfile` and `railway.toml` automatically -- don't deploy yet, you need a database first.
+
+### Step 2 -- Add a PostgreSQL Database
+
+1. Inside your project, click **New** → **Database** → **Add PostgreSQL**.
+2. Railway provisions a PostgreSQL instance and exposes connection variables automatically.
+3. Click on the PostgreSQL service and go to the **Variables** tab. Copy the value of `DATABASE_URL`.
+
+### Step 3 -- Configure Environment Variables
+
+1. Click on your **Sigil** service (the app, not the database).
+2. Go to the **Variables** tab and add the following:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Replace the scheme with `postgresql+asyncpg://` -- e.g. `postgresql+asyncpg://user:pass@host:port/dbname`. You can reference Railway's provided `DATABASE_URL` and adjust the scheme, or build the URL from the individual `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, and `PGDATABASE` variables. |
+| `ENCRYPTION_KEY` | A Fernet key. Generate one locally with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `CORS_ORIGINS` | Your Railway app URL, e.g. `https://sigil-production.up.railway.app` (shown after first deploy). Use `*` initially if unsure. |
+| `FETCH_INTERVAL_HOURS` | `6` (optional, defaults to 6) |
+
+> **Tip:** Railway auto-injects a `PORT` variable. The `Dockerfile` and `railway.toml` already reference `${PORT:-8000}`, so no action is needed for the port.
+
+### Step 4 -- Deploy
+
+1. Once the variables are set, click **Deploy** (or push a new commit to trigger a deploy).
+2. Railway builds the Docker image using the multi-stage `Dockerfile`:
+   - Stage 1 builds the React frontend (`npm run build`).
+   - Stage 2 installs the Python backend and copies the built frontend assets.
+3. On startup the container runs Alembic migrations (`alembic upgrade head`) and then starts the Uvicorn server.
+4. The health check at `/api/health` confirms the service is running.
+
+### Step 5 -- Get Your Public URL
+
+1. Click on the Sigil service and go to the **Settings** tab.
+2. Under **Networking**, click **Generate Domain** to get a public `*.up.railway.app` URL (or add a custom domain).
+3. Copy the URL and update the `CORS_ORIGINS` variable to match it (e.g. `https://sigil-production.up.railway.app`). This triggers an automatic redeploy.
+
+### Step 6 -- Verify the Deployment
+
+1. Open your Railway URL in a browser -- you should see the Sigil dashboard.
+2. Navigate to **Settings** in the app to add an IMAP mailbox.
+3. Trigger a manual fetch or wait for the auto-fetch scheduler to run.
+
+### Troubleshooting
+
+- **Database connection errors** -- Ensure `DATABASE_URL` uses the `postgresql+asyncpg://` scheme, not `postgresql://` or `postgres://`.
+- **CORS errors in the browser** -- Verify `CORS_ORIGINS` matches your Railway domain exactly (including `https://`).
+- **Build failures** -- Check the Railway build logs. The most common issue is a missing `package-lock.json` -- run `npm install` locally and commit the lock file.
+- **Viewing logs** -- Click on the Sigil service in Railway and open the **Logs** tab to see real-time application output.
