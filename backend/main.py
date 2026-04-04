@@ -314,6 +314,19 @@ async def dns_check(req: DnsCheckRequest, _user: str = Depends(require_auth)):
     return DnsCheckResponse(domain=req.domain, results=results)
 
 
+@app.get("/api/dns/domains")
+async def dns_domains(db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
+    """Return distinct domains seen across DMARC and TLS reports."""
+    dmarc_q = select(DmarcReport.domain).where(DmarcReport.domain.isnot(None)).distinct()
+    tls_q = select(TlsReport.policy_domain).where(TlsReport.policy_domain.isnot(None)).distinct()
+
+    dmarc_rows = (await db.execute(dmarc_q)).scalars().all()
+    tls_rows = (await db.execute(tls_q)).scalars().all()
+
+    all_domains = sorted(set(d.lower() for d in (*dmarc_rows, *tls_rows) if d))
+    return {"domains": all_domains}
+
+
 # --- Mailboxes ---
 
 

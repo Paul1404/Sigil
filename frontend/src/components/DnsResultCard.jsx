@@ -34,6 +34,39 @@ function TlsaParsed({ records }) {
   );
 }
 
+function MxParsed({ parsed }) {
+  if (!parsed?.hosts?.length) {
+    if (parsed?.null_mx) {
+      return (
+        <div className="mt-2 bg-gray-950 rounded-lg p-3 text-xs text-gray-400">
+          Null MX — this domain explicitly does not accept email.
+        </div>
+      );
+    }
+    return null;
+  }
+  return (
+    <div className="mt-2 bg-gray-950 rounded-lg p-3">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-600">
+            <th className="text-left pr-3 pb-1 font-medium">Priority</th>
+            <th className="text-left pb-1 font-medium">Mail Server</th>
+          </tr>
+        </thead>
+        <tbody>
+          {parsed.hosts.map((h, i) => (
+            <tr key={i} className="border-t border-gray-900">
+              <td className="pr-3 py-1 text-indigo-300 font-mono font-medium">{h.priority}</td>
+              <td className="py-1 text-white font-mono">{h.host}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function DmarcParsed({ parsed }) {
   if (!parsed) return null;
   const tags = Object.entries(parsed);
@@ -69,6 +102,7 @@ export default function DnsResultCard({ result }) {
     (result.recommendations?.length > 0) ||
     result.parsed;
 
+  const isMx = result.check_type === "MX";
   const isTlsa = result.check_type === "TLSA";
   const isDmarc = result.check_type === "DMARC";
 
@@ -109,6 +143,9 @@ export default function DnsResultCard({ result }) {
 
       {expanded && (
         <div className="mt-3 space-y-3">
+          {/* Parsed MX hosts */}
+          {isMx && result.parsed && <MxParsed parsed={result.parsed} />}
+
           {/* Parsed DMARC tags */}
           {isDmarc && result.parsed && <DmarcParsed parsed={result.parsed} />}
 
