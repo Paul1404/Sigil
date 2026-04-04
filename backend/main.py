@@ -7,10 +7,12 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import select, func, case, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from auth import create_access_token, require_auth, verify_password
 from config import settings
 from database import get_db
 from dns_checker import run_all_checks
@@ -54,6 +56,26 @@ app.add_middleware(
 )
 
 
+# --- Auth ---
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/api/auth/login")
+async def login(body: LoginRequest):
+    if not verify_password(body.password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    token = create_access_token()
+    return {"token": token}
+
+
+@app.get("/api/auth/me")
+async def auth_me(user: str = Depends(require_auth)):
+    return {"user": user}
+
+
 # --- Health ---
 
 
@@ -66,7 +88,7 @@ async def health():
 
 
 @app.get("/api/dashboard/stats", response_model=DashboardStats)
-async def dashboard_stats(db: AsyncSession = Depends(get_db)):
+async def dashboard_stats(db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     # Total reports
     total_reports = (await db.execute(func.count(DmarcReport.id))).scalar() or 0
 
@@ -126,7 +148,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/dashboard/timeline", response_model=list[TimelinePoint])
-async def dashboard_timeline(db: AsyncSession = Depends(get_db)):
+async def dashboard_timeline(db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     query = (
         select(
             func.date_trunc("day", DmarcReport.date_range_begin).label("day"),
@@ -172,6 +194,7 @@ async def list_reports(
     date_from: str | None = None,
     date_to: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
 ):
     query = select(DmarcReport).options(selectinload(DmarcReport.records))
     if domain:
@@ -214,7 +237,7 @@ async def list_reports(
 
 
 @app.get("/api/reports/{report_id}", response_model=DmarcReportDetail)
-async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):
+async def get_report(report_id: int, db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     result = await db.execute(
         select(DmarcReport)
         .options(selectinload(DmarcReport.records))
@@ -230,7 +253,7 @@ async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/api/dns/check", response_model=DnsCheckResponse)
-async def dns_check(req: DnsCheckRequest):
+async def dns_check(req: DnsCheckRequest, _user: str = Depends(require_auth)):
     results = run_all_checks(req.domain, req.dkim_selector)
     return DnsCheckResponse(domain=req.domain, results=results)
 
@@ -239,7 +262,7 @@ async def dns_check(req: DnsCheckRequest):
 
 
 @app.get("/api/mailboxes", response_model=list[MailboxResponse])
-async def list_mailboxes(db: AsyncSession = Depends(get_db)):
+async def list_mailboxes(db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     result = await db.execute(
         select(MailboxConfig).order_by(MailboxConfig.created_at.desc())
     )
@@ -247,7 +270,7 @@ async def list_mailboxes(db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/api/mailboxes", response_model=MailboxResponse, status_code=201)
-async def create_mailbox(data: MailboxCreate, db: AsyncSession = Depends(get_db)):
+async def create_mailbox(data: MailboxCreate, db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     mailbox = MailboxConfig(
         name=data.name,
         imap_host=data.imap_host,
@@ -264,7 +287,7 @@ async def create_mailbox(data: MailboxCreate, db: AsyncSession = Depends(get_db)
 
 @app.put("/api/mailboxes/{mailbox_id}", response_model=MailboxResponse)
 async def update_mailbox(
-    mailbox_id: int, data: MailboxUpdate, db: AsyncSession = Depends(get_db)
+    mailbox_id: int, data: MailboxUpdate, db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth),
 ):
     result = await db.execute(
         select(MailboxConfig).where(MailboxConfig.id == mailbox_id)
@@ -286,7 +309,7 @@ async def update_mailbox(
 
 
 @app.delete("/api/mailboxes/{mailbox_id}")
-async def delete_mailbox(mailbox_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_mailbox(mailbox_id: int, db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     result = await db.execute(
         select(MailboxConfig).where(MailboxConfig.id == mailbox_id)
     )
@@ -300,7 +323,7 @@ async def delete_mailbox(mailbox_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/api/mailboxes/{mailbox_id}/fetch", response_model=FetchResult)
-async def trigger_fetch(mailbox_id: int, db: AsyncSession = Depends(get_db)):
+async def trigger_fetch(mailbox_id: int, db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)):
     result = await db.execute(
         select(MailboxConfig).where(MailboxConfig.id == mailbox_id)
     )
