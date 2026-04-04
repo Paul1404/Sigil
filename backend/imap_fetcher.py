@@ -122,6 +122,20 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                 await db.flush()
 
                 for rec_data in parsed.records:
+                    # Serialize multiple auth results to JSON
+                    dkim_json = None
+                    if rec_data.dkim_results:
+                        dkim_json = [
+                            {"domain": ar.domain, "result": ar.result, "selector": ar.selector}
+                            for ar in rec_data.dkim_results
+                        ]
+                    spf_json = None
+                    if rec_data.spf_results:
+                        spf_json = [
+                            {"domain": ar.domain, "result": ar.result, "scope": ar.scope}
+                            for ar in rec_data.spf_results
+                        ]
+
                     record = DmarcRecord(
                         report_id=report.id,
                         source_ip=rec_data.source_ip,
@@ -135,6 +149,8 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                         spf_alignment=rec_data.spf_alignment,
                         envelope_from=rec_data.envelope_from,
                         header_from=rec_data.header_from,
+                        dkim_results_json=dkim_json,
+                        spf_results_json=spf_json,
                     )
                     db.add(record)
 

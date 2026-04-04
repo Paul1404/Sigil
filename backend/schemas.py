@@ -58,6 +58,8 @@ class DmarcRecordResponse(BaseModel):
     spf_alignment: str | None
     envelope_from: str | None
     header_from: str | None
+    dkim_results_json: list[dict] | None = None
+    spf_results_json: list[dict] | None = None
 
 
 # --- DMARC Report ---
@@ -136,6 +138,9 @@ class DnsCheckResult(BaseModel):
     status: str  # "pass", "warn", "fail"
     value: str | None = None
     details: str | None = None
+    warnings: list[str] = []
+    recommendations: list[str] = []
+    parsed: dict | None = None  # Structured breakdown of record fields
 
 
 class DnsCheckResponse(BaseModel):

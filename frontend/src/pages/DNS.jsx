@@ -34,7 +34,7 @@ export default function DNS() {
       <div>
         <h2 className="text-2xl font-bold text-white">DNS Health</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Check DMARC, SPF, DKIM, and TLSA records for any domain
+          Check DMARC, SPF, DKIM, TLSA/DANE, MTA-STS, and TLS Reporting records
         </p>
       </div>
 
