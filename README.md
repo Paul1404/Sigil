@@ -13,6 +13,11 @@ A self-hosted DMARC report viewer and email authentication dashboard. Connects t
 - **Encryption at rest** — IMAP passwords encrypted with Fernet
 - **Single-container deploy** — one Docker image, bundled frontend, auto-runs migrations on startup
 
+<img width="2165" height="1283" alt="image" src="https://github.com/user-attachments/assets/f8b703d4-ebcc-4f11-b965-2375d8275a51" />
+
+
+## What it does
+
 ## Quick Start (Docker Compose)
 
 This is the recommended way to run Sigil. No need to clone the repo.
