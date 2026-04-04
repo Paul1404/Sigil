@@ -55,7 +55,10 @@ def parse_tls_report_json(data: dict) -> ParsedTlsReport | None:
             policy.policy_type = policy_obj.get("policy-type")
             policy.policy_domain = policy_obj.get("policy-domain")
             policy.policy_strings = policy_obj.get("policy-string", [])
-            policy.mx_host = policy_obj.get("mx-host")
+            mx_host = policy_obj.get("mx-host")
+            if isinstance(mx_host, list):
+                mx_host = mx_host[0] if mx_host else None
+            policy.mx_host = mx_host
 
             summary = policy_data.get("summary", {})
             policy.total_success = summary.get("total-successful-session-count", 0)
