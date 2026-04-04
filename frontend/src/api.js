@@ -54,6 +54,13 @@ export const api = {
       body: JSON.stringify({ domain, dkim_selector: dkim_selector || null }),
     }),
 
+  // Inbox
+  getInbox: (mailbox_id) => {
+    const qs = mailbox_id ? `?mailbox_id=${mailbox_id}` : "";
+    return request(`/inbox${qs}`);
+  },
+  getInboxEmail: (id) => request(`/inbox/${id}`),
+
   // Mailboxes
   getMailboxes: () => request("/mailboxes"),
   createMailbox: (data) =>

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dmarc_parser import ParsedReport, extract_and_parse
 from encryption import decrypt_password
-from models import DmarcRecord, DmarcReport, MailboxConfig
+from models import DmarcRecord, DmarcReport, MailboxConfig, MailboxEmail
 
 logger = logging.getLogger(__name__)
 
@@ -28,27 +28,49 @@ def _decode_header_value(value: str | None) -> str:
     return " ".join(result)
 
 
+def _extract_body(msg: email.message.Message) -> tuple[str | None, str | None]:
+    """Extract plain text and HTML body from an email message."""
+    body_text = None
+    body_html = None
+    for part in msg.walk():
+        ct = part.get_content_type()
+        if part.get_content_maintype() == "multipart":
+            continue
+        if part.get_filename():
+            continue  # skip attachments
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        charset = part.get_content_charset() or "utf-8"
+        decoded = payload.decode(charset, errors="replace")
+        if ct == "text/plain" and body_text is None:
+            body_text = decoded
+        elif ct == "text/html" and body_html is None:
+            body_html = decoded
+    return body_text, body_html
+
+
 async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
-    result = {"status": "success", "message": "", "reports_found": 0}
+    result = {"status": "success", "message": "", "reports_found": 0, "emails_found": 0}
 
     try:
         password = decrypt_password(mailbox.encrypted_password)
     except Exception as e:
-        return {"status": "error", "message": f"Failed to decrypt password: {e}", "reports_found": 0}
+        return {"status": "error", "message": f"Failed to decrypt password: {e}", "reports_found": 0, "emails_found": 0}
 
     imap = None
     try:
         imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port)
         imap.login(mailbox.username, password)
     except imaplib.IMAP4.error as e:
-        return {"status": "error", "message": f"IMAP login failed: {e}", "reports_found": 0}
+        return {"status": "error", "message": f"IMAP login failed: {e}", "reports_found": 0, "emails_found": 0}
     except Exception as e:
-        return {"status": "error", "message": f"Failed to connect to IMAP server: {e}", "reports_found": 0}
+        return {"status": "error", "message": f"Failed to connect to IMAP server: {e}", "reports_found": 0, "emails_found": 0}
 
     try:
         status, _ = imap.select(mailbox.folder, readonly=True)
         if status != "OK":
-            return {"status": "error", "message": f"Could not select folder '{mailbox.folder}'", "reports_found": 0}
+            return {"status": "error", "message": f"Could not select folder '{mailbox.folder}'", "reports_found": 0, "emails_found": 0}
 
         # Search for all emails (we'll filter by attachment type)
         status, msg_ids = imap.search(None, "ALL")
@@ -58,6 +80,7 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
 
         ids = msg_ids[0].split()
         reports_found = 0
+        emails_found = 0
 
         for msg_id in ids:
             status, msg_data = imap.fetch(msg_id, "(RFC822)")
@@ -68,6 +91,7 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
             msg = email.message_from_bytes(raw_email)
             subject = _decode_header_value(msg.get("Subject"))
             date_str = msg.get("Date", "")
+            message_id = msg.get("Message-ID", "")
 
             msg_date = None
             try:
@@ -78,6 +102,7 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                 pass
 
             # Walk through parts looking for DMARC report attachments
+            email_had_reports = False
             for part in msg.walk():
                 if part.get_content_maintype() == "multipart":
                     continue
@@ -115,6 +140,7 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                     )
                 )
                 if existing.scalar_one_or_none() is not None:
+                    email_had_reports = True  # already imported, still a report email
                     continue
 
                 report = _create_report(parsed, mailbox.id, subject, msg_date)
@@ -155,6 +181,33 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                     db.add(record)
 
                 reports_found += 1
+                email_had_reports = True
+
+            # Non-DMARC email — store in inbox
+            if not email_had_reports:
+                # Deduplicate by Message-ID
+                if message_id:
+                    existing_email = await db.execute(
+                        select(MailboxEmail).where(
+                            MailboxEmail.message_id == message_id
+                        )
+                    )
+                    if existing_email.scalar_one_or_none() is not None:
+                        continue
+
+                body_text, body_html = _extract_body(msg)
+                mailbox_email = MailboxEmail(
+                    mailbox_id=mailbox.id,
+                    message_id=message_id or None,
+                    from_address=_decode_header_value(msg.get("From")),
+                    to_address=_decode_header_value(msg.get("To")),
+                    subject=subject,
+                    date=msg_date,
+                    body_text=body_text,
+                    body_html=body_html,
+                )
+                db.add(mailbox_email)
+                emails_found += 1
 
         await db.commit()
 
@@ -164,12 +217,13 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
         await db.commit()
 
         result["reports_found"] = reports_found
-        result["message"] = f"Successfully fetched {reports_found} new report(s)"
+        result["emails_found"] = emails_found
+        result["message"] = f"Fetched {reports_found} report(s) and {emails_found} email(s)"
 
     except Exception as e:
         logger.exception("Error fetching mailbox %s", mailbox.name)
         await db.rollback()
-        return {"status": "error", "message": f"Error processing emails: {e}", "reports_found": 0}
+        return {"status": "error", "message": f"Error processing emails: {e}", "reports_found": 0, "emails_found": 0}
     finally:
         if imap:
             try:

@@ -18,7 +18,7 @@ from database import get_db
 from dns_checker import run_all_checks
 from encryption import encrypt_password
 from imap_fetcher import fetch_mailbox
-from models import DmarcRecord, DmarcReport, MailboxConfig
+from models import DmarcRecord, DmarcReport, MailboxConfig, MailboxEmail
 from scheduler import start_scheduler, stop_scheduler
 from schemas import (
     DashboardStats,
@@ -29,6 +29,8 @@ from schemas import (
     DnsCheckResponse,
     FetchResult,
     MailboxCreate,
+    MailboxEmailDetail,
+    MailboxEmailSummary,
     MailboxResponse,
     MailboxUpdate,
     TimelinePoint,
@@ -333,6 +335,46 @@ async def trigger_fetch(mailbox_id: int, db: AsyncSession = Depends(get_db), _us
 
     fetch_result = await fetch_mailbox(mailbox, db)
     return FetchResult(**fetch_result)
+
+
+# --- Inbox (non-DMARC emails) ---
+
+
+@app.get("/api/inbox", response_model=list[MailboxEmailSummary])
+async def list_inbox(
+    mailbox_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
+):
+    query = select(MailboxEmail)
+    if mailbox_id is not None:
+        query = query.where(MailboxEmail.mailbox_id == mailbox_id)
+    query = query.order_by(MailboxEmail.date.desc().nullslast())
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@app.get("/api/inbox/{email_id}", response_model=MailboxEmailDetail)
+async def get_inbox_email(
+    email_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
+):
+    result = await db.execute(
+        select(MailboxEmail).where(MailboxEmail.id == email_id)
+    )
+    mail = result.scalar_one_or_none()
+    if not mail:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Mark as read
+    if not mail.is_read:
+        mail.is_read = True
+        db.add(mail)
+        await db.commit()
+        await db.refresh(mail)
+
+    return mail
 
 
 # --- Serve frontend static files ---

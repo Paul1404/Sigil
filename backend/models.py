@@ -33,6 +33,9 @@ class MailboxConfig(Base):
     reports: Mapped[list["DmarcReport"]] = relationship(
         back_populates="mailbox", cascade="all, delete-orphan"
     )
+    emails: Mapped[list["MailboxEmail"]] = relationship(
+        back_populates="mailbox", cascade="all, delete-orphan"
+    )
 
 
 class DmarcReport(Base):
@@ -91,3 +94,27 @@ class DmarcRecord(Base):
     spf_results_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     report: Mapped["DmarcReport"] = relationship(back_populates="records")
+
+
+class MailboxEmail(Base):
+    """Non-DMARC emails found in monitored mailboxes (read-only inbox)."""
+
+    __tablename__ = "mailbox_emails"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mailbox_id: Mapped[int] = mapped_column(ForeignKey("mailbox_configs.id"))
+    message_id: Mapped[str | None] = mapped_column(String(512), unique=True, nullable=True)
+    from_address: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    to_address: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    date: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    mailbox: Mapped["MailboxConfig"] = relationship(back_populates="emails")
