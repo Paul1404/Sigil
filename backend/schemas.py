@@ -148,6 +148,38 @@ class DnsCheckResponse(BaseModel):
     results: list[DnsCheckResult]
 
 
+# --- Inbox (non-DMARC emails) ---
+
+
+class MailboxEmailSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    mailbox_id: int
+    from_address: str | None
+    to_address: str | None
+    subject: str | None
+    date: datetime | None
+    is_read: bool
+    created_at: datetime
+
+
+class MailboxEmailDetail(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    mailbox_id: int
+    message_id: str | None
+    from_address: str | None
+    to_address: str | None
+    subject: str | None
+    date: datetime | None
+    body_text: str | None
+    body_html: str | None
+    is_read: bool
+    created_at: datetime
+
+
 # --- Fetch ---
 
 
@@ -155,3 +187,4 @@ class FetchResult(BaseModel):
     status: str
     message: str
     reports_found: int = 0
+    emails_found: int = 0

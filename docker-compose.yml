@@ -1,0 +1,68 @@
+# Sigil — DMARC report viewer for self-hosted mail servers
+#
+# Quick start (no git clone needed):
+#   1. Download this file and .env.example:
+#        curl -LO https://raw.githubusercontent.com/Paul1404/Sigil/main/docker-compose.yml
+#        curl -LO https://raw.githubusercontent.com/Paul1404/Sigil/main/.env.example
+#   2. Copy and edit the env file:
+#        cp .env.example .env && $EDITOR .env
+#   3. Start:
+#        docker compose up -d
+#   4. Open http://localhost:8000
+
+services:
+  sigil:
+    container_name: sigil
+    image: ghcr.io/paul1404/sigil:latest
+    # Uncomment to build locally instead of pulling from ghcr.io:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${SIGIL_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sigil:${POSTGRES_PASSWORD}@sigil-db:5432/sigil
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SECRET_KEY: ${SECRET_KEY}
+      FETCH_INTERVAL_HOURS: ${FETCH_INTERVAL_HOURS:-6}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    depends_on:
+      sigil-db:
+        condition: service_healthy
+    networks:
+      - sigil-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  sigil-db:
+    container_name: sigil-db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sigil
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sigil
+    volumes:
+      - sigil-db-data:/var/lib/postgresql/data
+    networks:
+      - sigil-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sigil -d sigil"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  sigil-db-data:
+    name: sigil-db-data
+
+networks:
+  sigil-net:
+    name: sigil-net

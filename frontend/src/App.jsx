@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import Reports from "./pages/Reports";
 import DNS from "./pages/DNS";
 import Settings from "./pages/Settings";
+import Inbox from "./pages/Inbox";
 import Login from "./pages/Login";
 
 function RequireAuth({ children }) {
@@ -35,6 +36,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="reports" element={<Reports />} />
         <Route path="dns" element={<DNS />} />
+        <Route path="inbox" element={<Inbox />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

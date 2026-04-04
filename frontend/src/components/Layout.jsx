@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   FileText,
   Globe,
+  Mail,
   Settings,
   Shield,
   LogOut,
@@ -13,6 +14,7 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/reports", icon: FileText, label: "Reports" },
   { to: "/dns", icon: Globe, label: "DNS Health" },
+  { to: "/inbox", icon: Mail, label: "Inbox" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
