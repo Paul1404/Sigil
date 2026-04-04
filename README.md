@@ -90,6 +90,8 @@ The frontend dev server proxies `/api` requests to `http://localhost:8000`.
 |------------------------|------------------------------------------|--------------------------------------------------|
 | `DATABASE_URL`         | PostgreSQL connection string             | `postgresql+asyncpg://user:password@localhost:5432/sigil` |
 | `ENCRYPTION_KEY`       | Fernet key for password encryption       | *(required)*                                     |
+| `ADMIN_PASSWORD`       | Admin login password for dashboard access | *(required)*                                     |
+| `SECRET_KEY`           | Secret key used to sign JWT auth tokens  | `change-me-to-a-random-secret`                   |
 | `CORS_ORIGINS`         | Comma-separated allowed origins          | `http://localhost:5173`                          |
 | `FETCH_INTERVAL_HOURS` | Hours between auto-fetch cycles          | `6`                                              |
 
@@ -146,6 +148,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 |---|---|
 | `DATABASE_URL` | Replace the scheme with `postgresql+asyncpg://` -- e.g. `postgresql+asyncpg://user:pass@host:port/dbname`. You can reference Railway's provided `DATABASE_URL` and adjust the scheme, or build the URL from the individual `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, and `PGDATABASE` variables. |
 | `ENCRYPTION_KEY` | A Fernet key. Generate one locally with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `ADMIN_PASSWORD` | A strong password for admin dashboard login. |
+| `SECRET_KEY` | A random secret for signing JWT tokens. Generate one locally or use a password manager. Change from the default in production. |
 | `CORS_ORIGINS` | Your Railway app URL, e.g. `https://sigil-production.up.railway.app` (shown after first deploy). Use `*` initially if unsure. |
 | `FETCH_INTERVAL_HOURS` | `6` (optional, defaults to 6) |
 
