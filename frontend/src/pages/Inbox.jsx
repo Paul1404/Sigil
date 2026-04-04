@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mail, ArrowLeft, Circle } from "lucide-react";
+import { Mail, ArrowLeft, Circle, CheckCheck } from "lucide-react";
 import { api } from "../api";
 
 export default function Inbox() {
@@ -39,6 +39,17 @@ export default function Inbox() {
     setSelected(null);
     setDetail(null);
   };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.markAllRead();
+      setEmails((prev) => prev.map((e) => ({ ...e, is_read: true })));
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const hasUnread = emails.some((e) => !e.is_read);
 
   if (error) {
     return (
@@ -119,11 +130,22 @@ export default function Inbox() {
   // List view
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Inbox</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Non-report emails from your monitored mailboxes
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Inbox</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Non-report emails from your monitored mailboxes
+          </p>
+        </div>
+        {hasUnread && (
+          <button
+            onClick={handleMarkAllRead}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white bg-gray-900 border border-gray-700 hover:border-gray-600 rounded-lg transition-colors"
+          >
+            <CheckCheck className="w-4 h-4" />
+            Mark all read
+          </button>
+        )}
       </div>
 
       {loading ? (
