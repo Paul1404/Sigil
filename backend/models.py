@@ -1,6 +1,7 @@
 import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -85,5 +86,8 @@ class DmarcRecord(Base):
     spf_alignment: Mapped[str | None] = mapped_column(String(20), nullable=True)
     envelope_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
     header_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # RFC 7489: store all auth_results (multiple DKIM/SPF possible per record)
+    dkim_results_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    spf_results_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     report: Mapped["DmarcReport"] = relationship(back_populates="records")

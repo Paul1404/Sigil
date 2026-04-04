@@ -7,6 +7,14 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class AuthResult:
+    domain: str | None = None
+    result: str | None = None
+    selector: str | None = None  # DKIM only
+    scope: str | None = None     # SPF only
+
+
+@dataclass
 class ParsedRecord:
     source_ip: str = ""
     count: int = 0
@@ -19,6 +27,9 @@ class ParsedRecord:
     spf_alignment: str | None = None
     envelope_from: str | None = None
     header_from: str | None = None
+    # RFC 7489: multiple auth results per record
+    dkim_results: list[AuthResult] = field(default_factory=list)
+    spf_results: list[AuthResult] = field(default_factory=list)
 
 
 @dataclass
@@ -103,15 +114,49 @@ def parse_dmarc_xml(xml_bytes: bytes) -> ParsedReport:
         rec.envelope_from = _text(identifiers, "envelope_from")
         rec.header_from = _text(identifiers, "header_from")
 
+        # Auth results — RFC 7489 allows multiple DKIM and SPF entries
         auth = record_el.find("auth_results")
         if auth is not None:
-            dkim = auth.find("dkim")
-            rec.dkim_domain = _text(dkim, "domain")
-            rec.dkim_result = _text(dkim, "result")
+            # Parse ALL dkim results
+            for dkim_el in auth.findall("dkim"):
+                ar = AuthResult(
+                    domain=_text(dkim_el, "domain") if dkim_el.find("domain") is not None else (dkim_el.findtext("domain") if hasattr(dkim_el, "findtext") else None),
+                    result=_text(dkim_el, "result") if dkim_el.find("result") is not None else None,
+                    selector=_text(dkim_el, "selector") if dkim_el.find("selector") is not None else None,
+                )
+                # Use direct child text if the element itself has domain/result attrs
+                if ar.domain is None and dkim_el.find("domain") is not None:
+                    ar.domain = dkim_el.find("domain").text
+                if ar.result is None and dkim_el.find("result") is not None:
+                    ar.result = dkim_el.find("result").text
+                rec.dkim_results.append(ar)
 
-            spf = auth.find("spf")
-            rec.spf_domain = _text(spf, "domain")
-            rec.spf_result = _text(spf, "result")
+            # Parse ALL spf results
+            for spf_el in auth.findall("spf"):
+                ar = AuthResult(
+                    domain=_text(spf_el, "domain") if spf_el.find("domain") is not None else None,
+                    result=_text(spf_el, "result") if spf_el.find("result") is not None else None,
+                    scope=_text(spf_el, "scope") if spf_el.find("scope") is not None else None,
+                )
+                rec.spf_results.append(ar)
+
+            # Backward compat: populate flat fields from first result
+            if rec.dkim_results:
+                rec.dkim_domain = rec.dkim_results[0].domain
+                rec.dkim_result = rec.dkim_results[0].result
+            else:
+                # Fallback to old single-element parsing
+                dkim = auth.find("dkim")
+                rec.dkim_domain = _text(dkim, "domain")
+                rec.dkim_result = _text(dkim, "result")
+
+            if rec.spf_results:
+                rec.spf_domain = rec.spf_results[0].domain
+                rec.spf_result = rec.spf_results[0].result
+            else:
+                spf = auth.find("spf")
+                rec.spf_domain = _text(spf, "domain")
+                rec.spf_result = _text(spf, "result")
 
         report.records.append(rec)
 
