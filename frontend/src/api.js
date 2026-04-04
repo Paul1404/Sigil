@@ -55,6 +55,7 @@ export const api = {
   getTlsReportsSummary: () => request("/tls-reports/summary"),
 
   // DNS
+  getDnsDomains: () => request("/dns/domains"),
   checkDns: (domain, dkim_selector) =>
     request("/dns/check", {
       method: "POST",

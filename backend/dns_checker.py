@@ -322,6 +322,101 @@ def check_dkim(domain: str, selector: str) -> DnsCheckResult:
 
 
 # ---------------------------------------------------------------------------
+# MX – RFC 5321 / RFC 7505
+# ---------------------------------------------------------------------------
+
+def check_mx(domain: str) -> DnsCheckResult:
+    """Check MX records for the domain."""
+    try:
+        answers = dns.resolver.resolve(domain, "MX", lifetime=5.0)
+        mx_hosts = sorted(
+            [(r.preference, str(r.exchange).rstrip(".")) for r in answers],
+            key=lambda x: x[0],
+        )
+    except dns.resolver.NXDOMAIN:
+        return DnsCheckResult(
+            check_type="MX",
+            status="fail",
+            details=f"No MX records found for {domain} (NXDOMAIN)",
+            recommendations=["Publish MX records to receive email for this domain"],
+        )
+    except dns.resolver.NoAnswer:
+        return DnsCheckResult(
+            check_type="MX",
+            status="fail",
+            details=f"No MX records found for {domain}",
+            recommendations=["Publish MX records to receive email for this domain"],
+        )
+    except dns.resolver.Timeout:
+        return DnsCheckResult(
+            check_type="MX",
+            status="warn",
+            details=f"DNS timeout querying MX for {domain}",
+        )
+    except Exception as e:
+        return DnsCheckResult(
+            check_type="MX",
+            status="fail",
+            details=f"Error querying MX for {domain}: {e}",
+        )
+
+    if not mx_hosts:
+        return DnsCheckResult(
+            check_type="MX",
+            status="fail",
+            details=f"No MX records found for {domain}",
+            recommendations=["Publish MX records to receive email for this domain"],
+        )
+
+    warnings: list[str] = []
+    recommendations: list[str] = []
+
+    # RFC 7505: null MX (priority 0, host ".")
+    if len(mx_hosts) == 1 and mx_hosts[0][1] == "":
+        return DnsCheckResult(
+            check_type="MX",
+            status="pass",
+            value="0 .",
+            details=f"Null MX record for {domain} — domain explicitly does not accept email (RFC 7505)",
+            parsed={"hosts": [], "null_mx": True},
+        )
+
+    # Check for issues
+    host_list = []
+    for pref, host in mx_hosts:
+        host_list.append({"priority": pref, "host": host})
+
+        # MX pointing to IP address (RFC 5321 violation)
+        if re.match(r"^\d+\.\d+\.\d+\.\d+$", host):
+            warnings.append(f"MX host '{host}' is an IP address — RFC 5321 requires a hostname")
+
+        # MX pointing to CNAME is discouraged (RFC 2181 s10.3)
+        try:
+            cname_answers = dns.resolver.resolve(host, "CNAME", lifetime=3.0)
+            if cname_answers:
+                warnings.append(f"MX host '{host}' resolves via CNAME — this is discouraged per RFC 2181")
+        except Exception:
+            pass  # No CNAME is fine
+
+    # Duplicate priorities
+    prefs = [p for p, _ in mx_hosts]
+    if len(prefs) != len(set(prefs)):
+        recommendations.append("Multiple MX hosts share the same priority — consider distinct priorities for clear failover order")
+
+    display_lines = [f"{pref} {host}" for pref, host in mx_hosts]
+
+    return DnsCheckResult(
+        check_type="MX",
+        status="warn" if warnings else "pass",
+        value="\n".join(display_lines),
+        details=f"Found {len(mx_hosts)} MX record(s) for {domain}",
+        warnings=warnings,
+        recommendations=recommendations,
+        parsed={"hosts": host_list, "null_mx": False},
+    )
+
+
+# ---------------------------------------------------------------------------
 # TLSA – RFC 6698 (DANE)
 # ---------------------------------------------------------------------------
 
@@ -646,7 +741,7 @@ def check_tlsrpt(domain: str) -> DnsCheckResult:
 # ---------------------------------------------------------------------------
 
 def run_all_checks(domain: str, dkim_selector: str | None = None) -> list[DnsCheckResult]:
-    results = [check_dmarc(domain), check_spf(domain)]
+    results = [check_mx(domain), check_dmarc(domain), check_spf(domain)]
     if dkim_selector:
         results.append(check_dkim(domain, dkim_selector))
     results.extend(check_tlsa(domain))
