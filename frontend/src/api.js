@@ -1,10 +1,22 @@
 const BASE = "/api";
 
+function getToken() {
+  return localStorage.getItem("sigil_token");
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
+  const token = getToken();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem("sigil_token");
+    window.location.href = "/login";
+    throw new Error("Session expired");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Request failed: ${res.status}`);
@@ -13,6 +25,13 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Auth
+  login: (password) =>
+    request("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
   // Dashboard
   getStats: () => request("/dashboard/stats"),
   getTimeline: () => request("/dashboard/timeline"),
