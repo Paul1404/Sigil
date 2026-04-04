@@ -47,6 +47,13 @@ export const api = {
   },
   getReport: (id) => request(`/reports/${id}`),
 
+  // TLS Reports
+  getTlsReports: (domain) => {
+    const qs = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+    return request(`/tls-reports${qs}`);
+  },
+  getTlsReportsSummary: () => request("/tls-reports/summary"),
+
   // DNS
   checkDns: (domain, dkim_selector) =>
     request("/dns/check", {
@@ -60,6 +67,10 @@ export const api = {
     return request(`/inbox${qs}`);
   },
   getInboxEmail: (id) => request(`/inbox/${id}`),
+  markAllRead: (mailbox_id) => {
+    const qs = mailbox_id ? `?mailbox_id=${mailbox_id}` : "";
+    return request(`/inbox/mark-all-read${qs}`, { method: "POST" });
+  },
 
   // Mailboxes
   getMailboxes: () => request("/mailboxes"),

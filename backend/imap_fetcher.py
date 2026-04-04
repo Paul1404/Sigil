@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dmarc_parser import ParsedReport, extract_and_parse
 from encryption import decrypt_password
-from models import DmarcRecord, DmarcReport, MailboxConfig, MailboxEmail
+from models import DmarcRecord, DmarcReport, MailboxConfig, MailboxEmail, TlsReport
+from tls_parser import extract_and_parse_tls
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
 
         ids = msg_ids[0].split()
         reports_found = 0
+        tls_reports_found = 0
         emails_found = 0
 
         for msg_id in ids:
@@ -183,6 +185,15 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                 reports_found += 1
                 email_had_reports = True
 
+            # Try TLS-RPT detection if no DMARC reports were found
+            if not email_had_reports:
+                tls_count = await _try_parse_tls_report(
+                    msg, mailbox.id, subject, msg_date, db
+                )
+                if tls_count > 0:
+                    email_had_reports = True  # Prevent falling into inbox
+                    tls_reports_found += tls_count
+
             # Non-DMARC email — store in inbox
             if not email_had_reports:
                 # Deduplicate by Message-ID
@@ -217,8 +228,9 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
         await db.commit()
 
         result["reports_found"] = reports_found
+        result["tls_reports_found"] = tls_reports_found
         result["emails_found"] = emails_found
-        result["message"] = f"Fetched {reports_found} report(s) and {emails_found} email(s)"
+        result["message"] = f"Fetched {reports_found} DMARC report(s), {tls_reports_found} TLS report(s), and {emails_found} email(s)"
 
     except Exception as e:
         logger.exception("Error fetching mailbox %s", mailbox.name)
@@ -233,6 +245,96 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                 pass
 
     return result
+
+
+_TLS_SENDER_PATTERNS = [
+    "tls-reporting",
+    "tlsrpt",
+    "smtp-tls-reporting",
+]
+
+
+def _is_tls_report_sender(from_addr: str) -> bool:
+    """Check if the sender looks like a TLS report sender."""
+    lower = from_addr.lower()
+    return any(pat in lower for pat in _TLS_SENDER_PATTERNS)
+
+
+async def _try_parse_tls_report(
+    msg: email.message.Message,
+    mailbox_id: int,
+    subject: str | None,
+    msg_date: datetime | None,
+    db: AsyncSession,
+) -> int:
+    """Try to detect and parse TLS-RPT from an email. Returns count of reports saved."""
+    from_addr = _decode_header_value(msg.get("From", ""))
+
+    # Only attempt TLS parsing if sender matches known patterns
+    if not _is_tls_report_sender(from_addr):
+        return 0
+
+    count = 0
+    for part in msg.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+
+        filename = part.get_filename()
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+
+        # TLS reports can be JSON, gzipped JSON, or zipped JSON
+        # Some senders don't set filenames; try content type
+        if not filename:
+            ct = part.get_content_type()
+            if ct in ("application/json", "application/gzip", "application/tlsrpt+gzip", "application/tlsrpt+json"):
+                filename = "report.json.gz" if "gzip" in ct else "report.json"
+            else:
+                continue
+
+        filename = _decode_header_value(filename) if isinstance(filename, str) else filename
+        parsed = extract_and_parse_tls(filename, payload)
+        if parsed is None:
+            continue
+
+        # Generate report_id if missing
+        if not parsed.report_id:
+            parsed.report_id = f"tls-auto-{uuid.uuid4().hex[:12]}"
+
+        # One TLS-RPT can have multiple policies; store one row per policy
+        for policy in parsed.policies:
+            report_id = f"{parsed.report_id}:{policy.policy_domain or 'unknown'}"
+
+            # Deduplicate
+            existing = await db.execute(
+                select(TlsReport).where(TlsReport.report_id_str == report_id)
+            )
+            if existing.scalar_one_or_none() is not None:
+                count += 1  # Already exists, still a TLS report email
+                continue
+
+            tls_report = TlsReport(
+                mailbox_id=mailbox_id,
+                report_id_str=report_id,
+                org_name=parsed.org_name,
+                contact_info=parsed.contact_info,
+                date_range_begin=parsed.date_range_begin,
+                date_range_end=parsed.date_range_end,
+                policy_type=policy.policy_type,
+                policy_domain=policy.policy_domain,
+                policy_strings=policy.policy_strings,
+                mx_host=policy.mx_host,
+                total_success=policy.total_success,
+                total_failure=policy.total_failure,
+                failure_details_json=policy.failure_details or None,
+                email_subject=subject,
+                email_date=msg_date,
+            )
+            db.add(tls_report)
+            count += 1
+
+    return count
 
 
 def _create_report(

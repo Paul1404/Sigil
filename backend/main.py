@@ -18,7 +18,7 @@ from database import get_db
 from dns_checker import run_all_checks
 from encryption import encrypt_password
 from imap_fetcher import fetch_mailbox
-from models import DmarcRecord, DmarcReport, MailboxConfig, MailboxEmail
+from models import DmarcRecord, DmarcReport, MailboxConfig, MailboxEmail, TlsReport
 from scheduler import start_scheduler, stop_scheduler
 from schemas import (
     DashboardStats,
@@ -34,6 +34,8 @@ from schemas import (
     MailboxResponse,
     MailboxUpdate,
     TimelinePoint,
+    TlsDomainSummary,
+    TlsReportSummary,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -213,6 +215,8 @@ async def list_reports(
     summaries = []
     for r in reports:
         total = sum(rec.count for rec in r.records)
+        if total == 0:
+            continue  # Skip empty reports with no records/messages
         passed = sum(
             rec.count
             for rec in r.records
@@ -249,6 +253,56 @@ async def get_report(report_id: int, db: AsyncSession = Depends(get_db), _user: 
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
+
+
+# --- TLS Reports ---
+
+
+@app.get("/api/tls-reports", response_model=list[TlsReportSummary])
+async def list_tls_reports(
+    domain: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
+):
+    query = select(TlsReport)
+    if domain:
+        query = query.where(TlsReport.policy_domain.ilike(f"%{domain}%"))
+    query = query.order_by(TlsReport.date_range_end.desc().nullslast())
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@app.get("/api/tls-reports/summary", response_model=list[TlsDomainSummary])
+async def tls_reports_summary(
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
+):
+    query = (
+        select(
+            TlsReport.policy_domain,
+            func.sum(TlsReport.total_success).label("total_success"),
+            func.sum(TlsReport.total_failure).label("total_failure"),
+            func.count(TlsReport.id).label("report_count"),
+            func.max(TlsReport.date_range_end).label("latest_report"),
+        )
+        .where(TlsReport.policy_domain.isnot(None))
+        .group_by(TlsReport.policy_domain)
+        .order_by(func.max(TlsReport.date_range_end).desc().nullslast())
+    )
+    rows = (await db.execute(query)).all()
+    return [
+        TlsDomainSummary(
+            domain=r.policy_domain,
+            total_success=r.total_success or 0,
+            total_failure=r.total_failure or 0,
+            report_count=r.report_count,
+            success_rate=round(
+                (r.total_success or 0) / max((r.total_success or 0) + (r.total_failure or 0), 1) * 100, 1
+            ),
+            latest_report=r.latest_report,
+        )
+        for r in rows
+    ]
 
 
 # --- DNS ---
@@ -375,6 +429,22 @@ async def get_inbox_email(
         await db.refresh(mail)
 
     return mail
+
+
+@app.post("/api/inbox/mark-all-read")
+async def mark_all_read(
+    mailbox_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: str = Depends(require_auth),
+):
+    from sqlalchemy import update
+
+    stmt = update(MailboxEmail).where(MailboxEmail.is_read == False).values(is_read=True)
+    if mailbox_id is not None:
+        stmt = stmt.where(MailboxEmail.mailbox_id == mailbox_id)
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"marked": result.rowcount}
 
 
 # --- Serve frontend static files ---

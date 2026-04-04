@@ -33,6 +33,9 @@ class MailboxConfig(Base):
     reports: Mapped[list["DmarcReport"]] = relationship(
         back_populates="mailbox", cascade="all, delete-orphan"
     )
+    tls_reports: Mapped[list["TlsReport"]] = relationship(
+        back_populates="mailbox", cascade="all, delete-orphan"
+    )
     emails: Mapped[list["MailboxEmail"]] = relationship(
         back_populates="mailbox", cascade="all, delete-orphan"
     )
@@ -94,6 +97,40 @@ class DmarcRecord(Base):
     spf_results_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     report: Mapped["DmarcReport"] = relationship(back_populates="records")
+
+
+class TlsReport(Base):
+    """SMTP TLS-RPT reports (RFC 8460) from receiving mail servers."""
+
+    __tablename__ = "tls_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mailbox_id: Mapped[int] = mapped_column(ForeignKey("mailbox_configs.id"))
+    report_id_str: Mapped[str] = mapped_column(String(512), unique=True)
+    org_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_info: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    date_range_begin: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    date_range_end: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    policy_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    policy_domain: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    policy_strings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    mx_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    total_success: Mapped[int] = mapped_column(Integer, default=0)
+    total_failure: Mapped[int] = mapped_column(Integer, default=0)
+    failure_details_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    email_subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_date: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    mailbox: Mapped["MailboxConfig"] = relationship(back_populates="tls_reports")
 
 
 class MailboxEmail(Base):

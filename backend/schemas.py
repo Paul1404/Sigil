@@ -148,6 +148,36 @@ class DnsCheckResponse(BaseModel):
     results: list[DnsCheckResult]
 
 
+# --- TLS Reports (RFC 8460) ---
+
+
+class TlsReportSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    mailbox_id: int
+    report_id_str: str
+    org_name: str | None
+    date_range_begin: datetime | None
+    date_range_end: datetime | None
+    policy_type: str | None
+    policy_domain: str | None
+    mx_host: str | None
+    total_success: int
+    total_failure: int
+    failure_details_json: list[dict] | None = None
+    created_at: datetime
+
+
+class TlsDomainSummary(BaseModel):
+    domain: str
+    total_success: int
+    total_failure: int
+    report_count: int
+    success_rate: float
+    latest_report: datetime | None
+
+
 # --- Inbox (non-DMARC emails) ---
 
 
@@ -187,4 +217,5 @@ class FetchResult(BaseModel):
     status: str
     message: str
     reports_found: int = 0
+    tls_reports_found: int = 0
     emails_found: int = 0
