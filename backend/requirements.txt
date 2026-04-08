@@ -8,6 +8,6 @@ pydantic-settings==2.13.1
 python-dotenv==1.0.1
 dnspython==2.7.0
 apscheduler==3.11.2
-cryptography==46.0.6
+cryptography==46.0.7
 aiofiles==25.1.0
 pyjwt==2.12.1
