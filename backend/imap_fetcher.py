@@ -69,7 +69,7 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
         return {"status": "error", "message": f"Failed to connect to IMAP server: {e}", "reports_found": 0, "emails_found": 0}
 
     try:
-        status, _ = imap.select(mailbox.folder, readonly=True)
+        status, _ = imap.select(mailbox.folder, readonly=False)
         if status != "OK":
             return {"status": "error", "message": f"Could not select folder '{mailbox.folder}'", "reports_found": 0, "emails_found": 0}
 
@@ -194,6 +194,12 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                     email_had_reports = True  # Prevent falling into inbox
                     tls_reports_found += tls_count
 
+            # TLS report sender with no parseable attachment — skip inbox
+            if not email_had_reports:
+                from_addr = _decode_header_value(msg.get("From", ""))
+                if _is_tls_report_sender(from_addr):
+                    email_had_reports = True
+
             # Non-DMARC email — store in inbox
             if not email_had_reports:
                 # Deduplicate by Message-ID
@@ -219,6 +225,12 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
                 )
                 db.add(mailbox_email)
                 emails_found += 1
+
+            # Mark email as read (Seen) on the IMAP server
+            try:
+                imap.store(msg_id, "+FLAGS", "\\Seen")
+            except Exception:
+                logger.debug("Could not mark message %s as Seen", msg_id)
 
         await db.commit()
 
