@@ -8,12 +8,14 @@ import {
   ShieldX,
   ShieldOff,
   EyeOff,
+  Eye,
   Info,
   LayoutGrid,
   List,
   Lock,
   Unlock,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import { api } from "../api";
 import { StateBadge } from "../components/StateBadge";
@@ -224,75 +226,23 @@ function DmarcReportsTab() {
             )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {visibleDomainSummaries.map((s) => {
-              const isActive =
-                activeDomainFilter?.toLowerCase() === s.domain.toLowerCase();
-              const c = s.counts;
-              const showHealth = c.health_total > 0;
-              return (
-                <button
-                  key={s.domain}
-                  onClick={() =>
-                    setActiveDomainFilter(isActive ? null : s.domain)
-                  }
-                  className={`text-left p-4 rounded-xl border transition-all ${
-                    isActive
-                      ? "bg-indigo-500/10 border-indigo-500/40 ring-1 ring-indigo-500/30"
-                      : "bg-gray-900 border-gray-800 hover:border-gray-700"
-                  } ${s.is_ignored ? "opacity-60" : ""}`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    {s.is_ignored ? (
-                      <EyeOff className="w-5 h-5 text-gray-500" />
-                    ) : showHealth ? (
-                      healthIcon(c.health_rate)
-                    ) : (
-                      <Info className="w-5 h-5 text-gray-500" />
-                    )}
-                    <span className="text-white font-mono text-sm truncate">
-                      {s.domain}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline justify-between">
-                    {s.is_ignored ? (
-                      <span className="text-sm text-gray-500">Ignored</span>
-                    ) : showHealth ? (
-                      <span className={`text-2xl font-bold ${healthColor(c.health_rate)}`}>
-                        {c.health_rate}%
-                      </span>
-                    ) : (
-                      <span className="text-sm text-gray-500">No real mail seen</span>
-                    )}
-                    <span className="text-xs text-gray-500">
-                      {c.total_messages.toLocaleString()} msgs &middot;{" "}
-                      {s.report_count} reports
-                    </span>
-                  </div>
-                  <div className="flex gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
-                    {c.aligned > 0 && (
-                      <span className="text-green-400">
-                        {c.aligned} ok
-                      </span>
-                    )}
-                    {c.misaligned_legitimate > 0 && (
-                      <span className="text-red-400">
-                        {c.misaligned_legitimate} failing
-                      </span>
-                    )}
-                    {c.rejected_spoof > 0 && (
-                      <span className="text-sky-400">
-                        {c.rejected_spoof} spoofs blocked
-                      </span>
-                    )}
-                    {c.unknown_failure > 0 && (
-                      <span className="text-amber-400">
-                        {c.unknown_failure} to triage
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+            {visibleDomainSummaries.map((s) => (
+              <DomainHealthCard
+                key={s.domain}
+                summary={s}
+                isActive={
+                  activeDomainFilter?.toLowerCase() === s.domain.toLowerCase()
+                }
+                onToggleFilter={() =>
+                  setActiveDomainFilter(
+                    activeDomainFilter?.toLowerCase() === s.domain.toLowerCase()
+                      ? null
+                      : s.domain,
+                  )
+                }
+                onChanged={fetchAll}
+              />
+            ))}
           </div>
           {activeDomainFilter && (
             <button
@@ -416,6 +366,112 @@ function DmarcReportsTab() {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function DomainHealthCard({ summary: s, isActive, onToggleFilter, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const c = s.counts;
+  const showHealth = c.health_total > 0;
+
+  const toggleIgnored = async (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const existing = await api.getClassifications(s.domain.toLowerCase());
+      const wholeDomainRow = existing.find(
+        (r) =>
+          r.match_type === "domain" &&
+          r.match_value.toLowerCase() === s.domain.toLowerCase(),
+      );
+      if (s.is_ignored && wholeDomainRow) {
+        await api.deleteClassification(wholeDomainRow.id);
+      } else {
+        await api.createClassification({
+          policy_domain: s.domain.toLowerCase(),
+          match_type: "domain",
+          match_value: s.domain.toLowerCase(),
+          classification: "ignored",
+        });
+      }
+      onChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onToggleFilter}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggleFilter();
+        }
+      }}
+      className={`group relative text-left p-4 rounded-xl border transition-all cursor-pointer ${
+        isActive
+          ? "bg-indigo-500/10 border-indigo-500/40 ring-1 ring-indigo-500/30"
+          : "bg-gray-900 border-gray-800 hover:border-gray-700"
+      } ${s.is_ignored ? "opacity-60" : ""}`}
+    >
+      <button
+        onClick={toggleIgnored}
+        disabled={busy}
+        title={s.is_ignored ? "Unignore this domain" : "Hide this domain"}
+        className="absolute top-2 right-2 p-1 rounded text-gray-600 hover:text-gray-200 hover:bg-gray-800 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+      >
+        {s.is_ignored ? (
+          <Eye className="w-4 h-4" />
+        ) : (
+          <EyeOff className="w-4 h-4" />
+        )}
+      </button>
+      <div className="flex items-center gap-2 mb-2 pr-7">
+        {s.is_ignored ? (
+          <EyeOff className="w-5 h-5 text-gray-500" />
+        ) : showHealth ? (
+          healthIcon(c.health_rate)
+        ) : (
+          <Info className="w-5 h-5 text-gray-500" />
+        )}
+        <span className="text-white font-mono text-sm truncate">
+          {s.domain}
+        </span>
+      </div>
+      <div className="flex items-baseline justify-between">
+        {s.is_ignored ? (
+          <span className="text-sm text-gray-500">Ignored</span>
+        ) : showHealth ? (
+          <span className={`text-2xl font-bold ${healthColor(c.health_rate)}`}>
+            {c.health_rate}%
+          </span>
+        ) : (
+          <span className="text-sm text-gray-500">No real mail seen</span>
+        )}
+        <span className="text-xs text-gray-500">
+          {c.total_messages.toLocaleString()} msgs &middot; {s.report_count}{" "}
+          reports
+        </span>
+      </div>
+      <div className="flex gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
+        {c.aligned > 0 && <span className="text-green-400">{c.aligned} ok</span>}
+        {c.misaligned_legitimate > 0 && (
+          <span className="text-red-400">
+            {c.misaligned_legitimate} failing
+          </span>
+        )}
+        {c.rejected_spoof > 0 && (
+          <span className="text-sky-400">{c.rejected_spoof} spoofs blocked</span>
+        )}
+        {c.unknown_failure > 0 && (
+          <span className="text-amber-400">{c.unknown_failure} to triage</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -560,86 +616,260 @@ function rowStateBg(state) {
 }
 
 function RecordTable({ records, policyDomain, onClassified }) {
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Drop selections for records that disappeared after a refresh.
+  useEffect(() => {
+    setSelected((prev) => {
+      const valid = new Set(records.map((r) => r.id));
+      const next = new Set();
+      for (const id of prev) if (valid.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [records]);
+
   if (!records || records.length === 0) {
     return <p className="text-gray-500 text-sm">No records in this report.</p>;
   }
 
+  const triageRecords = records.filter(
+    (r) => (r.state || "unknown_failure") === "unknown_failure",
+  );
+
+  const allSelected = selected.size > 0 && selected.size === records.length;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  const toggleOne = (id, checked) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected((prev) =>
+      prev.size === records.length ? new Set() : new Set(records.map((r) => r.id)),
+    );
+  };
+
+  const selectTriage = () => {
+    setSelected(new Set(triageRecords.map((r) => r.id)));
+  };
+
+  const clearSelection = () => setSelected(new Set());
+
+  const bulkClassify = async (classification) => {
+    if (selected.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      // Dedupe by (match_type, match_value) so we don't send identical writes.
+      const seen = new Set();
+      const tasks = [];
+      for (const rec of records) {
+        if (!selected.has(rec.id)) continue;
+        // Prefer source_ip, fall back to header_from / envelope_from.
+        let match_type = null;
+        let match_value = null;
+        if (rec.source_ip) {
+          match_type = "source_ip";
+          match_value = rec.source_ip;
+        } else if (rec.header_from) {
+          match_type = "header_from";
+          match_value = rec.header_from;
+        } else if (rec.envelope_from) {
+          match_type = "envelope_from";
+          match_value = rec.envelope_from;
+        }
+        if (!match_value) continue;
+        const key = `${match_type}|${match_value.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        tasks.push(
+          api.createClassification({
+            policy_domain: policyDomain,
+            match_type,
+            match_value,
+            classification,
+          }),
+        );
+      }
+      await Promise.all(tasks);
+      setSelected(new Set());
+      onClassified?.();
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
-    <table className="w-full text-xs">
-      <thead>
-        <tr className="text-left border-b border-gray-800">
-          <th className="px-3 py-2 text-gray-400">State</th>
-          <th className="px-3 py-2 text-gray-400">Source IP</th>
-          <th className="px-3 py-2 text-gray-400">Count</th>
-          <th className="px-3 py-2 text-gray-400">DKIM</th>
-          <th className="px-3 py-2 text-gray-400">SPF</th>
-          <th className="px-3 py-2 text-gray-400">DKIM Align</th>
-          <th className="px-3 py-2 text-gray-400">SPF Align</th>
-          <th className="px-3 py-2 text-gray-400">Envelope From</th>
-          <th className="px-3 py-2 text-gray-400">Header From</th>
-          <th className="px-3 py-2 text-gray-400 w-8"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {records.map((rec) => {
-          const state = rec.state || "unknown_failure";
-          const dkimPass = rec.dkim_alignment === "pass";
-          const spfPass = rec.spf_alignment === "pass";
-          return (
-            <tr key={rec.id} className={`border-b border-gray-900 ${rowStateBg(state)}`}>
-              <td className="px-3 py-2">
-                <StateBadge state={state} />
-              </td>
-              <td className="px-3 py-2 font-mono text-gray-300">
-                {rec.source_ip}
-              </td>
-              <td className="px-3 py-2 text-gray-300">{rec.count}</td>
-              <td className="px-3 py-2">
-                <span
-                  className={
-                    rec.dkim_result === "pass" ? "text-green-400" : "text-red-400"
-                  }
-                >
-                  {rec.dkim_result || "-"}
-                </span>
-              </td>
-              <td className="px-3 py-2">
-                <span
-                  className={
-                    rec.spf_result === "pass" ? "text-green-400" : "text-red-400"
-                  }
-                >
-                  {rec.spf_result || "-"}
-                </span>
-              </td>
-              <td className="px-3 py-2">
-                <span className={dkimPass ? "text-green-400" : "text-red-400"}>
-                  {rec.dkim_alignment || "-"}
-                </span>
-              </td>
-              <td className="px-3 py-2">
-                <span className={spfPass ? "text-green-400" : "text-red-400"}>
-                  {rec.spf_alignment || "-"}
-                </span>
-              </td>
-              <td className="px-3 py-2 text-gray-400">
-                {rec.envelope_from || "-"}
-              </td>
-              <td className="px-3 py-2 text-gray-400">
-                {rec.header_from || "-"}
-              </td>
-              <td className="px-3 py-2">
-                <ClassifyMenu
-                  record={rec}
-                  policyDomain={policyDomain}
-                  onChanged={onClassified}
-                />
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-[11px] text-gray-500">
+          {selected.size > 0 ? (
+            <span className="text-gray-300">
+              {selected.size} selected
+            </span>
+          ) : triageRecords.length > 0 ? (
+            <button
+              onClick={selectTriage}
+              className="text-amber-400 hover:text-amber-300 transition-colors"
+            >
+              Select {triageRecords.length} needing triage
+            </button>
+          ) : (
+            <span>All records classified.</span>
+          )}
+        </div>
+        {selected.size > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => bulkClassify("trusted")}
+              disabled={bulkBusy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-500/10 text-green-300 hover:bg-green-500/20 text-[11px] font-medium border border-green-500/20 disabled:opacity-50"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Mark trusted
+            </button>
+            <button
+              onClick={() => bulkClassify("unauthorized")}
+              disabled={bulkBusy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 text-[11px] font-medium border border-sky-500/20 disabled:opacity-50"
+            >
+              <ShieldOff className="w-3.5 h-3.5" />
+              Mark unauthorized
+            </button>
+            <button
+              onClick={() => bulkClassify("ignored")}
+              disabled={bulkBusy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-500/10 text-gray-300 hover:bg-gray-500/20 text-[11px] font-medium border border-gray-500/20 disabled:opacity-50"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              Ignore
+            </button>
+            <button
+              onClick={clearSelection}
+              disabled={bulkBusy}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-800 text-[11px] disabled:opacity-50"
+              title="Clear selection"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left border-b border-gray-800">
+            <th className="px-3 py-2 w-8">
+              <input
+                type="checkbox"
+                aria-label="Select all records"
+                className="accent-indigo-500"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelected;
+                }}
+                onChange={toggleAll}
+              />
+            </th>
+            <th className="px-3 py-2 text-gray-400">State</th>
+            <th className="px-3 py-2 text-gray-400">Source IP</th>
+            <th className="px-3 py-2 text-gray-400">Count</th>
+            <th className="px-3 py-2 text-gray-400">DKIM</th>
+            <th className="px-3 py-2 text-gray-400">SPF</th>
+            <th className="px-3 py-2 text-gray-400">DKIM Align</th>
+            <th className="px-3 py-2 text-gray-400">SPF Align</th>
+            <th className="px-3 py-2 text-gray-400">Envelope From</th>
+            <th className="px-3 py-2 text-gray-400">Header From</th>
+            <th className="px-3 py-2 text-gray-400 w-8"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((rec) => {
+            const state = rec.state || "unknown_failure";
+            const dkimPass = rec.dkim_alignment === "pass";
+            const spfPass = rec.spf_alignment === "pass";
+            const isSelected = selected.has(rec.id);
+            return (
+              <tr
+                key={rec.id}
+                className={`border-b border-gray-900 ${rowStateBg(state)} ${
+                  isSelected ? "bg-indigo-500/10" : ""
+                }`}
+              >
+                <td className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select record ${rec.id}`}
+                    className="accent-indigo-500"
+                    checked={isSelected}
+                    onChange={(e) => toggleOne(rec.id, e.target.checked)}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <StateBadge state={state} />
+                </td>
+                <td className="px-3 py-2 font-mono text-gray-300">
+                  {rec.source_ip}
+                </td>
+                <td className="px-3 py-2 text-gray-300">{rec.count}</td>
+                <td className="px-3 py-2">
+                  <span
+                    className={
+                      rec.dkim_result === "pass"
+                        ? "text-green-400"
+                        : "text-red-400"
+                    }
+                  >
+                    {rec.dkim_result || "-"}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={
+                      rec.spf_result === "pass"
+                        ? "text-green-400"
+                        : "text-red-400"
+                    }
+                  >
+                    {rec.spf_result || "-"}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={dkimPass ? "text-green-400" : "text-red-400"}
+                  >
+                    {rec.dkim_alignment || "-"}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span className={spfPass ? "text-green-400" : "text-red-400"}>
+                    {rec.spf_alignment || "-"}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-gray-400">
+                  {rec.envelope_from || "-"}
+                </td>
+                <td className="px-3 py-2 text-gray-400">
+                  {rec.header_from || "-"}
+                </td>
+                <td className="px-3 py-2">
+                  <ClassifyMenu
+                    record={rec}
+                    policyDomain={policyDomain}
+                    onChanged={onClassified}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

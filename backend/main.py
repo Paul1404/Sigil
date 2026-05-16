@@ -354,9 +354,15 @@ async def domain_health(db: AsyncSession = Depends(get_db), _user: str = Depends
 
     rollup: dict[str, dict] = {}
     for r in reports:
-        domain = r.domain
-        policy = r.policy_domain or domain
-        bucket = rollup.setdefault(domain, {"counts": StateCounts(), "reports": 0})
+        raw_domain = (r.domain or "").strip()
+        if not raw_domain:
+            # Reports without a domain are noise on the overview, don't surface them.
+            continue
+        key = raw_domain.lower()
+        policy = r.policy_domain or raw_domain
+        bucket = rollup.setdefault(
+            key, {"counts": StateCounts(), "reports": 0, "display": key}
+        )
         bucket["reports"] += 1
         c = count_record_states(r.records, policy, index)
         bucket["counts"].aligned += c.aligned
@@ -366,12 +372,13 @@ async def domain_health(db: AsyncSession = Depends(get_db), _user: str = Depends
         bucket["counts"].unknown_failure += c.unknown_failure
 
     summaries: list[DomainHealthSummary] = []
-    for domain, data in rollup.items():
-        ignored = (index.get(domain.lower(), {}).get(MATCH_DOMAIN, {}).get(domain.lower())
-                   == CLASS_IGNORED)
+    for key, data in rollup.items():
+        ignored = (
+            index.get(key, {}).get(MATCH_DOMAIN, {}).get(key) == CLASS_IGNORED
+        )
         summaries.append(
             DomainHealthSummary(
-                domain=domain,
+                domain=data["display"],
                 counts=StateCountsResponse(**data["counts"].as_dict()),
                 report_count=data["reports"],
                 is_ignored=ignored,
