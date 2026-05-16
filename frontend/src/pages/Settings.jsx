@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import MailboxForm from "../components/MailboxForm";
+import ClassificationsManager from "../components/ClassificationsManager";
 
 export default function Settings() {
   const [mailboxes, setMailboxes] = useState([]);
@@ -230,6 +231,10 @@ export default function Settings() {
           Active mailboxes are automatically checked every 6 hours for new DMARC
           reports. Use the refresh button to trigger an immediate fetch.
         </p>
+      </div>
+
+      <div className="pt-4 border-t border-gray-800">
+        <ClassificationsManager />
       </div>
     </div>
   );

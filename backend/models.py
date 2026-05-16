@@ -133,6 +133,37 @@ class TlsReport(Base):
     mailbox: Mapped["MailboxConfig"] = relationship(back_populates="tls_reports")
 
 
+class SourceClassification(Base):
+    """User-defined classification for a sending source within a policy domain.
+
+    classification values:
+      - "trusted":      legitimate sender; failing auth needs investigation
+      - "unauthorized": known spoof source; failing auth is the desired outcome
+      - "ignored":      misdetected domain or otherwise excluded from metrics
+
+    match_type values:
+      - "domain":        applies to the whole policy_domain (match_value == policy_domain)
+      - "source_ip":     match on DmarcRecord.source_ip
+      - "header_from":   match on DmarcRecord.header_from
+      - "envelope_from": match on DmarcRecord.envelope_from
+    """
+
+    __tablename__ = "source_classifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    policy_domain: Mapped[str] = mapped_column(String(255), index=True)
+    match_type: Mapped[str] = mapped_column(String(20))
+    match_value: Mapped[str] = mapped_column(String(255))
+    classification: Mapped[str] = mapped_column(String(20))
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class MailboxEmail(Base):
     """Non-DMARC emails found in monitored mailboxes (read-only inbox)."""
 

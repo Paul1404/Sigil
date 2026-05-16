@@ -60,6 +60,17 @@ class DmarcRecordResponse(BaseModel):
     header_from: str | None
     dkim_results_json: list[dict] | None = None
     spf_results_json: list[dict] | None = None
+    state: str | None = None  # aligned | misaligned_legitimate | rejected_spoof | ignored | unknown_failure
+
+
+class StateCountsResponse(BaseModel):
+    aligned: int = 0
+    misaligned_legitimate: int = 0
+    rejected_spoof: int = 0
+    ignored: int = 0
+    unknown_failure: int = 0
+    health_rate: float = 0.0
+    total_messages: int = 0
 
 
 # --- DMARC Report ---
@@ -79,7 +90,8 @@ class DmarcReportSummary(BaseModel):
     email_date: datetime | None
     created_at: datetime
     total_messages: int = 0
-    pass_rate: float = 0.0
+    pass_rate: float = 0.0  # legacy: dkim or spf aligned, undifferentiated
+    counts: StateCountsResponse = StateCountsResponse()
 
 
 class DmarcReportDetail(BaseModel):
@@ -112,9 +124,10 @@ class DashboardStats(BaseModel):
     total_reports: int
     total_domains: int
     total_messages: int
-    overall_pass_rate: float
+    overall_pass_rate: float  # legacy: dkim or spf aligned, undifferentiated
     last_report_date: datetime | None
     top_senders: list[dict]
+    counts: StateCountsResponse = StateCountsResponse()
 
 
 class TimelinePoint(BaseModel):
@@ -208,6 +221,42 @@ class MailboxEmailDetail(BaseModel):
     body_html: str | None
     is_read: bool
     created_at: datetime
+
+
+# --- Source classifications ---
+
+
+class SourceClassificationCreate(BaseModel):
+    policy_domain: str
+    match_type: str  # "domain" | "source_ip" | "header_from" | "envelope_from"
+    match_value: str
+    classification: str  # "trusted" | "unauthorized" | "ignored"
+    notes: str | None = None
+
+
+class SourceClassificationUpdate(BaseModel):
+    classification: str | None = None
+    notes: str | None = None
+
+
+class SourceClassificationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    policy_domain: str
+    match_type: str
+    match_value: str
+    classification: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DomainHealthSummary(BaseModel):
+    domain: str
+    counts: StateCountsResponse
+    report_count: int
+    is_ignored: bool = False  # whole-domain ignored classification
 
 
 # --- Fetch ---
