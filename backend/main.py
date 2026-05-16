@@ -21,6 +21,7 @@ from classifier import (
     MATCH_ENVELOPE_FROM,
     MATCH_HEADER_FROM,
     MATCH_SOURCE_IP,
+    STATE_UNKNOWN_FAILURE,
     StateCounts,
     build_index,
     classify_record,
@@ -61,6 +62,7 @@ from schemas import (
     TimelinePoint,
     TlsDomainSummary,
     TlsReportSummary,
+    TriageItem,
 )
 
 VALID_CLASSIFICATIONS = {CLASS_TRUSTED, CLASS_UNAUTHORIZED, CLASS_IGNORED}
@@ -386,6 +388,99 @@ async def domain_health(db: AsyncSession = Depends(get_db), _user: str = Depends
         )
     summaries.sort(key=lambda s: s.counts.total_messages, reverse=True)
     return summaries
+
+
+@app.get("/api/triage/queue", response_model=list[TriageItem])
+async def triage_queue(
+    db: AsyncSession = Depends(get_db), _user: str = Depends(require_auth)
+):
+    """Unclassified failing sources, aggregated by (policy_domain, source_ip).
+
+    One entry == one decision. Classifying it dispositions every matching
+    record across every report. Sorted by message volume, highest first."""
+    reports = (
+        await db.execute(
+            select(DmarcReport).options(selectinload(DmarcReport.records))
+        )
+    ).scalars().all()
+    index = await _load_classification_index(db)
+
+    groups: dict[tuple[str, str], dict] = {}
+    for r in reports:
+        raw_domain = (r.domain or "").strip()
+        if not raw_domain:
+            continue
+        policy = (r.policy_domain or raw_domain)
+        policy_lc = policy.lower()
+        # Skip records under domains the user has marked entirely ignored.
+        if (
+            index.get(policy_lc, {}).get(MATCH_DOMAIN, {}).get(policy_lc)
+            == CLASS_IGNORED
+        ):
+            continue
+        for rec in r.records:
+            if classify_record(rec, policy, index) != STATE_UNKNOWN_FAILURE:
+                continue
+            if not rec.source_ip:
+                continue
+            key = (policy_lc, rec.source_ip)
+            g = groups.get(key)
+            if g is None:
+                g = {
+                    "source_ip": rec.source_ip,
+                    "policy_domain": policy_lc,
+                    "domain": raw_domain,
+                    "header_from": set(),
+                    "envelope_from": set(),
+                    "dkim_results": set(),
+                    "spf_results": set(),
+                    "dispositions": set(),
+                    "total_count": 0,
+                    "report_ids": set(),
+                    "first_seen": None,
+                    "last_seen": None,
+                }
+                groups[key] = g
+            if rec.header_from:
+                g["header_from"].add(rec.header_from)
+            if rec.envelope_from:
+                g["envelope_from"].add(rec.envelope_from)
+            if rec.dkim_result:
+                g["dkim_results"].add(rec.dkim_result)
+            if rec.spf_result:
+                g["spf_results"].add(rec.spf_result)
+            if rec.disposition:
+                g["dispositions"].add(rec.disposition)
+            g["total_count"] += rec.count
+            g["report_ids"].add(r.id)
+            if r.date_range_begin and (
+                g["first_seen"] is None or r.date_range_begin < g["first_seen"]
+            ):
+                g["first_seen"] = r.date_range_begin
+            if r.date_range_end and (
+                g["last_seen"] is None or r.date_range_end > g["last_seen"]
+            ):
+                g["last_seen"] = r.date_range_end
+
+    items = [
+        TriageItem(
+            source_ip=g["source_ip"],
+            policy_domain=g["policy_domain"],
+            domain=g["domain"],
+            header_from=sorted(g["header_from"]),
+            envelope_from=sorted(g["envelope_from"]),
+            dkim_results=sorted(g["dkim_results"]),
+            spf_results=sorted(g["spf_results"]),
+            dispositions=sorted(g["dispositions"]),
+            total_count=g["total_count"],
+            report_count=len(g["report_ids"]),
+            first_seen=g["first_seen"],
+            last_seen=g["last_seen"],
+        )
+        for g in groups.values()
+    ]
+    items.sort(key=lambda i: i.total_count, reverse=True)
+    return items
 
 
 # --- TLS Reports ---

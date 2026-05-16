@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -16,6 +16,12 @@ import {
   Unlock,
   AlertTriangle,
   X,
+  Undo2,
+  SkipForward,
+  Sparkles,
+  Zap,
+  Keyboard,
+  CheckCircle2,
 } from "lucide-react";
 import { api } from "../api";
 import { StateBadge } from "../components/StateBadge";
@@ -35,6 +41,20 @@ function healthColor(rate) {
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState("dmarc");
+  const [triageCount, setTriageCount] = useState(null);
+
+  const refreshTriageCount = useCallback(async () => {
+    try {
+      const q = await api.getTriageQueue();
+      setTriageCount(q.length);
+    } catch {
+      setTriageCount(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshTriageCount();
+  }, [refreshTriageCount]);
 
   return (
     <div className="space-y-6">
@@ -58,6 +78,28 @@ export default function Reports() {
           DMARC Reports
         </button>
         <button
+          onClick={() => setActiveTab("triage")}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors inline-flex items-center gap-2 ${
+            activeTab === "triage"
+              ? "bg-indigo-600 text-white"
+              : "text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5" />
+          Triage Queue
+          {triageCount !== null && triageCount > 0 && (
+            <span
+              className={`inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-semibold ${
+                activeTab === "triage"
+                  ? "bg-white/20 text-white"
+                  : "bg-amber-500/20 text-amber-300"
+              }`}
+            >
+              {triageCount}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setActiveTab("tls")}
           className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
             activeTab === "tls"
@@ -69,12 +111,22 @@ export default function Reports() {
         </button>
       </div>
 
-      {activeTab === "dmarc" ? <DmarcReportsTab /> : <TlsReportsTab />}
+      {activeTab === "dmarc" && (
+        <DmarcReportsTab
+          triageCount={triageCount}
+          onOpenTriage={() => setActiveTab("triage")}
+          onClassificationChanged={refreshTriageCount}
+        />
+      )}
+      {activeTab === "triage" && (
+        <TriageQueueTab onChanged={refreshTriageCount} />
+      )}
+      {activeTab === "tls" && <TlsReportsTab />}
     </div>
   );
 }
 
-function DmarcReportsTab() {
+function DmarcReportsTab({ triageCount, onOpenTriage, onClassificationChanged }) {
   const [reports, setReports] = useState([]);
   const [domainSummaries, setDomainSummaries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +172,8 @@ function DmarcReportsTab() {
 
   const handleClassified = useCallback(async () => {
     await Promise.all([fetchAll(), refreshDetailIfOpen()]);
-  }, [fetchAll, refreshDetailIfOpen]);
+    onClassificationChanged?.();
+  }, [fetchAll, refreshDetailIfOpen, onClassificationChanged]);
 
   const toggleExpand = async (id) => {
     if (expanded === id) {
@@ -206,6 +259,34 @@ function DmarcReportsTab() {
           </div>
         </div>
       </div>
+
+      {/* Triage queue CTA */}
+      {triageCount > 0 && (
+        <button
+          onClick={onOpenTriage}
+          className="w-full flex items-center justify-between gap-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 transition-colors text-left group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">
+                {triageCount} source{triageCount !== 1 ? "s" : ""} waiting to
+                triage
+              </div>
+              <div className="text-xs text-gray-400">
+                Open the focused queue to classify them quickly with keyboard
+                shortcuts.
+              </div>
+            </div>
+          </div>
+          <div className="inline-flex items-center gap-2 text-amber-300 text-sm font-medium group-hover:text-amber-200">
+            Open queue
+            <ChevronRight className="w-4 h-4" />
+          </div>
+        </button>
+      )}
 
       {/* Domain summary cards */}
       {!loading && visibleDomainSummaries.length > 0 && (
@@ -870,6 +951,591 @@ function RecordTable({ records, policyDomain, onClassified }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/* ===================== Triage Queue Tab ===================== */
+
+function TriageQueueTab({ onChanged }) {
+  const [queue, setQueue] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+  const [cursor, setCursor] = useState(0);
+  const [history, setHistory] = useState([]); // [{ item, classification, classificationId }]
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const q = await api.getTriageQueue();
+      setQueue(q);
+      setCursor(0);
+      setHistory([]);
+    } catch (e) {
+      setError(e.message);
+      setQueue([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const showToast = useCallback((msg, tone = "default") => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, tone });
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  useEffect(() => () => toastTimer.current && clearTimeout(toastTimer.current), []);
+
+  const current = queue && cursor < queue.length ? queue[cursor] : null;
+  const remaining = queue ? Math.max(0, queue.length - cursor) : 0;
+  const total = queue?.length ?? 0;
+  const done = total - remaining;
+
+  const classify = useCallback(
+    async (classification) => {
+      if (!current || busy) return;
+      setBusy(true);
+      const item = current;
+      try {
+        const row = await api.createClassification({
+          policy_domain: item.policy_domain,
+          match_type: "source_ip",
+          match_value: item.source_ip,
+          classification,
+        });
+        setHistory((h) => [
+          ...h,
+          { item, classification, classificationId: row.id },
+        ]);
+        setCursor((c) => c + 1);
+        const labels = {
+          trusted: "marked as trusted",
+          unauthorized: "marked as unauthorized",
+          ignored: "ignored",
+        };
+        showToast(`${item.source_ip} ${labels[classification]}`, classification);
+        onChanged?.();
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [current, busy, onChanged, showToast],
+  );
+
+  const skip = useCallback(() => {
+    if (!current || busy) return;
+    setCursor((c) => c + 1);
+  }, [current, busy]);
+
+  const undo = useCallback(async () => {
+    if (busy || history.length === 0 || !queue) return;
+    const last = history[history.length - 1];
+    setBusy(true);
+    try {
+      await api.deleteClassification(last.classificationId);
+      setHistory((h) => h.slice(0, -1));
+      // Items stay in the queue when classified; find the undone item and
+      // rewind the cursor to it so the user can re-decide.
+      const idx = queue.findIndex(
+        (q) =>
+          q.source_ip === last.item.source_ip &&
+          q.policy_domain === last.item.policy_domain,
+      );
+      setCursor(idx >= 0 ? idx : Math.max(0, cursor - 1));
+      showToast(`Undid ${last.item.source_ip}`, "default");
+      onChanged?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, history, queue, cursor, onChanged, showToast]);
+
+  // Keyboard shortcuts. Active whenever this tab is mounted and not typing in an input.
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "t") {
+        e.preventDefault();
+        classify("trusted");
+      } else if (k === "u") {
+        e.preventDefault();
+        classify("unauthorized");
+      } else if (k === "i") {
+        e.preventDefault();
+        classify("ignored");
+      } else if (k === "s" || k === "arrowright" || k === "j") {
+        e.preventDefault();
+        skip();
+      } else if (k === "z") {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [classify, skip, undo]);
+
+  if (queue === null) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Help banner */}
+      <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4 flex gap-3 items-start">
+        <Sparkles className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+        <div className="text-sm text-gray-400">
+          <span className="text-indigo-300 font-medium">Focused triage.</span>{" "}
+          Each card is one source IP appearing across one or many reports.
+          Classify it once and it dispositions every matching record. Use
+          keyboard shortcuts to fly through them.
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Progress */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="text-sm text-gray-400">
+          {total === 0 ? (
+            <span>Nothing to triage.</span>
+          ) : remaining === 0 ? (
+            <span className="text-green-400 inline-flex items-center gap-1">
+              <CheckCircle2 className="w-4 h-4" />
+              Queue cleared. {done} classified this session.
+            </span>
+          ) : (
+            <span>
+              <span className="text-white font-medium">{done}</span> of{" "}
+              <span className="text-white font-medium">{total}</span> classified
+              <span className="text-gray-500">
+                {" "}
+                &middot; {remaining} remaining
+              </span>
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {history.length > 0 && (
+            <button
+              onClick={undo}
+              disabled={busy}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors disabled:opacity-50"
+              title="Undo last action (Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              Undo
+            </button>
+          )}
+          <button
+            onClick={load}
+            className="px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
+            title="Reload queue"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {total > 0 && (
+        <div className="h-1 bg-gray-900 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 transition-all duration-300"
+            style={{ width: `${total === 0 ? 0 : (done / total) * 100}%` }}
+          />
+        </div>
+      )}
+
+      {/* Main card */}
+      {current ? (
+        <TriageCard
+          item={current}
+          peek={queue.slice(cursor + 1, cursor + 4)}
+          busy={busy}
+          onClassify={classify}
+          onSkip={skip}
+        />
+      ) : total > 0 ? (
+        <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-10 text-center">
+          <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-3" />
+          <div className="text-lg font-medium text-white">All caught up.</div>
+          <div className="text-sm text-gray-400 mt-1">
+            You classified {done} source{done !== 1 ? "s" : ""} in this session.
+          </div>
+          <button
+            onClick={load}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Refresh queue
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-10 text-center">
+          <CheckCircle2 className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+          <div className="text-lg font-medium text-white">
+            Nothing to triage.
+          </div>
+          <div className="text-sm text-gray-500 mt-1">
+            Every failing source has been classified. New unclassified sources
+            will appear here when fresh reports arrive.
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-xl border backdrop-blur text-sm flex items-center gap-3 ${
+            toast.tone === "trusted"
+              ? "bg-green-500/15 border-green-500/30 text-green-200"
+              : toast.tone === "unauthorized"
+                ? "bg-sky-500/15 border-sky-500/30 text-sky-200"
+                : toast.tone === "ignored"
+                  ? "bg-gray-700/40 border-gray-600 text-gray-200"
+                  : "bg-gray-800 border-gray-700 text-gray-200"
+          }`}
+        >
+          <span>{toast.msg}</span>
+          {history.length > 0 && (
+            <button
+              onClick={undo}
+              className="text-xs underline underline-offset-2 hover:no-underline"
+            >
+              Undo
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TriageCard({ item, peek, busy, onClassify, onSkip }) {
+  const headerFromMatchesDomain =
+    item.header_from.length === 1 &&
+    item.header_from[0].toLowerCase() === item.policy_domain.toLowerCase();
+
+  const dkimAllFail =
+    item.dkim_results.length > 0 &&
+    item.dkim_results.every((r) => r !== "pass");
+  const spfAllFail =
+    item.spf_results.length > 0 && item.spf_results.every((r) => r !== "pass");
+  const dispositionRejected = item.dispositions.some(
+    (d) => d === "reject" || d === "quarantine",
+  );
+
+  // Heuristic hints to help the user decide quickly.
+  const hints = [];
+  if (headerFromMatchesDomain) {
+    hints.push({
+      tone: "warn",
+      text: "Header From matches your domain. If this is a real sender, mark trusted and fix SPF/DKIM.",
+    });
+  } else if (item.header_from.length > 0) {
+    hints.push({
+      tone: "info",
+      text: `Header From is ${item.header_from.join(", ")}, not your domain. Often a third party.`,
+    });
+  }
+  if (dkimAllFail && spfAllFail) {
+    hints.push({
+      tone: "danger",
+      text: "Both DKIM and SPF fail. Looks like a spoof unless you recognise this sender.",
+    });
+  }
+  if (dispositionRejected) {
+    hints.push({
+      tone: "info",
+      text: "DMARC already rejected/quarantined. Marking unauthorized confirms it.",
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-gray-800 flex items-baseline justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+            Source IP
+          </div>
+          <div className="text-2xl font-mono text-white">{item.source_ip}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+            Impact
+          </div>
+          <div className="text-white">
+            <span className="text-2xl font-semibold">
+              {item.total_count.toLocaleString()}
+            </span>
+            <span className="text-sm text-gray-400 ml-1">
+              msg{item.total_count !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            across {item.report_count} report{item.report_count !== 1 ? "s" : ""}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="px-6 py-5 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <Field
+            label="Policy domain"
+            value={
+              <span className="font-mono text-white">{item.domain}</span>
+            }
+          />
+          <Field
+            label="Date range"
+            value={
+              <span className="text-gray-300">
+                {item.first_seen
+                  ? new Date(item.first_seen).toLocaleDateString()
+                  : "?"}
+                {" - "}
+                {item.last_seen
+                  ? new Date(item.last_seen).toLocaleDateString()
+                  : "?"}
+              </span>
+            }
+          />
+          <Field
+            label="Header From"
+            value={
+              item.header_from.length === 0 ? (
+                <span className="text-gray-500">-</span>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {item.header_from.map((h) => (
+                    <span
+                      key={h}
+                      className={`px-2 py-0.5 rounded font-mono text-xs ${
+                        h.toLowerCase() === item.policy_domain.toLowerCase()
+                          ? "bg-amber-500/10 text-amber-200 border border-amber-500/20"
+                          : "bg-gray-800 text-gray-200"
+                      }`}
+                    >
+                      {h}
+                    </span>
+                  ))}
+                </div>
+              )
+            }
+          />
+          <Field
+            label="Envelope From"
+            value={
+              item.envelope_from.length === 0 ? (
+                <span className="text-gray-500">-</span>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {item.envelope_from.map((h) => (
+                    <span
+                      key={h}
+                      className="px-2 py-0.5 rounded font-mono text-xs bg-gray-800 text-gray-200"
+                    >
+                      {h}
+                    </span>
+                  ))}
+                </div>
+              )
+            }
+          />
+          <Field
+            label="DKIM"
+            value={
+              <div className="flex flex-wrap gap-1">
+                {item.dkim_results.length === 0 ? (
+                  <span className="text-gray-500">-</span>
+                ) : (
+                  item.dkim_results.map((r) => (
+                    <span
+                      key={r}
+                      className={`px-2 py-0.5 rounded text-xs ${
+                        r === "pass"
+                          ? "bg-green-500/10 text-green-300"
+                          : "bg-red-500/10 text-red-300"
+                      }`}
+                    >
+                      {r}
+                    </span>
+                  ))
+                )}
+              </div>
+            }
+          />
+          <Field
+            label="SPF"
+            value={
+              <div className="flex flex-wrap gap-1">
+                {item.spf_results.length === 0 ? (
+                  <span className="text-gray-500">-</span>
+                ) : (
+                  item.spf_results.map((r) => (
+                    <span
+                      key={r}
+                      className={`px-2 py-0.5 rounded text-xs ${
+                        r === "pass"
+                          ? "bg-green-500/10 text-green-300"
+                          : "bg-red-500/10 text-red-300"
+                      }`}
+                    >
+                      {r}
+                    </span>
+                  ))
+                )}
+              </div>
+            }
+          />
+        </div>
+
+        {hints.length > 0 && (
+          <div className="space-y-1.5">
+            {hints.map((h, i) => (
+              <div
+                key={i}
+                className={`text-xs px-3 py-2 rounded-md border flex items-start gap-2 ${
+                  h.tone === "danger"
+                    ? "bg-red-500/5 border-red-500/20 text-red-200"
+                    : h.tone === "warn"
+                      ? "bg-amber-500/5 border-amber-500/20 text-amber-200"
+                      : "bg-gray-800/60 border-gray-700 text-gray-300"
+                }`}
+              >
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-80" />
+                <span>{h.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="px-6 py-4 border-t border-gray-800 bg-gray-950/60 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <TriageAction
+            onClick={() => onClassify("trusted")}
+            disabled={busy}
+            tone="trusted"
+            shortcut="T"
+            icon={ShieldCheck}
+            label="Trusted"
+          />
+          <TriageAction
+            onClick={() => onClassify("unauthorized")}
+            disabled={busy}
+            tone="unauthorized"
+            shortcut="U"
+            icon={ShieldOff}
+            label="Unauthorized"
+          />
+          <TriageAction
+            onClick={() => onClassify("ignored")}
+            disabled={busy}
+            tone="ignored"
+            shortcut="I"
+            icon={EyeOff}
+            label="Ignore"
+          />
+          <button
+            onClick={onSkip}
+            disabled={busy}
+            title="Skip without classifying (S)"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          >
+            <SkipForward className="w-4 h-4" />
+            Skip
+            <kbd className="ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-gray-800 text-gray-400 rounded border border-gray-700">
+              S
+            </kbd>
+          </button>
+        </div>
+        <div className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+          <Keyboard className="w-3.5 h-3.5" />
+          T / U / I to classify, S to skip, Z to undo
+        </div>
+      </div>
+
+      {/* Peek at upcoming items */}
+      {peek.length > 0 && (
+        <div className="px-6 py-3 border-t border-gray-800 bg-gray-950/40">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">
+            Up next
+          </div>
+          <div className="flex flex-col gap-1">
+            {peek.map((p) => (
+              <div
+                key={`${p.policy_domain}|${p.source_ip}`}
+                className="flex items-center justify-between text-xs text-gray-500"
+              >
+                <span className="font-mono">{p.source_ip}</span>
+                <span>
+                  {p.total_count.toLocaleString()} msg
+                  {p.total_count !== 1 ? "s" : ""} &middot; {p.domain}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, value }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
+        {label}
+      </div>
+      <div>{value}</div>
+    </div>
+  );
+}
+
+function TriageAction({ onClick, disabled, tone, shortcut, icon: Icon, label }) {
+  const tones = {
+    trusted:
+      "bg-green-500/10 border-green-500/30 text-green-200 hover:bg-green-500/20 hover:border-green-500/50",
+    unauthorized:
+      "bg-sky-500/10 border-sky-500/30 text-sky-200 hover:bg-sky-500/20 hover:border-sky-500/50",
+    ignored:
+      "bg-gray-700/40 border-gray-600 text-gray-200 hover:bg-gray-700/60 hover:border-gray-500",
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${tones[tone]}`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+      <kbd className="ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-black/30 rounded border border-white/10">
+        {shortcut}
+      </kbd>
+    </button>
   );
 }
 

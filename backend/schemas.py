@@ -259,6 +259,24 @@ class DomainHealthSummary(BaseModel):
     is_ignored: bool = False  # whole-domain ignored classification
 
 
+class TriageItem(BaseModel):
+    """One unclassified failing source, aggregated across every report it
+    appears in. One classification on this item dispositions every record."""
+
+    source_ip: str
+    policy_domain: str
+    domain: str
+    header_from: list[str]
+    envelope_from: list[str]
+    dkim_results: list[str]
+    spf_results: list[str]
+    dispositions: list[str]
+    total_count: int
+    report_count: int
+    first_seen: datetime | None
+    last_seen: datetime | None
+
+
 # --- Fetch ---
 
 
