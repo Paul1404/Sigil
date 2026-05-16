@@ -47,6 +47,7 @@ export const api = {
   },
   getReport: (id) => request(`/reports/${id}`),
   getDomainHealth: () => request("/reports-domains/health"),
+  getTriageQueue: () => request("/triage/queue"),
 
   // Source classifications
   getClassifications: (policy_domain) => {
