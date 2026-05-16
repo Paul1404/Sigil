@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -6,6 +6,8 @@ import {
   ShieldCheck,
   ShieldAlert,
   ShieldX,
+  ShieldOff,
+  EyeOff,
   Info,
   LayoutGrid,
   List,
@@ -14,20 +16,19 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { api } from "../api";
-import StatusBadge from "../components/StatusBadge";
+import { StateBadge } from "../components/StateBadge";
+import ClassifyMenu from "../components/ClassifyMenu";
 
-function getStatusLabel(rate) {
-  if (rate >= 90) return "All Passed";
-  if (rate >= 50) return "Partial";
-  return "All Failed";
+function healthIcon(rate) {
+  if (rate >= 95) return <ShieldCheck className="w-5 h-5 text-green-400" />;
+  if (rate >= 75) return <ShieldAlert className="w-5 h-5 text-yellow-400" />;
+  return <ShieldX className="w-5 h-5 text-red-400" />;
 }
 
-function getStatusIcon(rate) {
-  if (rate >= 90)
-    return <ShieldCheck className="w-5 h-5 text-green-400" />;
-  if (rate >= 50)
-    return <ShieldAlert className="w-5 h-5 text-yellow-400" />;
-  return <ShieldX className="w-5 h-5 text-red-400" />;
+function healthColor(rate) {
+  if (rate >= 95) return "text-green-400";
+  if (rate >= 75) return "text-yellow-400";
+  return "text-red-400";
 }
 
 export default function Reports() {
@@ -73,6 +74,7 @@ export default function Reports() {
 
 function DmarcReportsTab() {
   const [reports, setReports] = useState([]);
+  const [domainSummaries, setDomainSummaries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(null);
@@ -82,19 +84,41 @@ function DmarcReportsTab() {
   const [dateTo, setDateTo] = useState("");
   const [activeDomainFilter, setActiveDomainFilter] = useState(null);
   const [viewMode, setViewMode] = useState("list"); // "list" or "grouped"
+  const [showIgnored, setShowIgnored] = useState(false);
 
-  const fetchReports = () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
-    api
-      .getReports({ domain, date_from: dateFrom, date_to: dateTo })
-      .then(setReports)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  };
+    try {
+      const [r, h] = await Promise.all([
+        api.getReports({ domain, date_from: dateFrom, date_to: dateTo }),
+        api.getDomainHealth(),
+      ]);
+      setReports(r);
+      setDomainSummaries(h);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [domain, dateFrom, dateTo]);
 
   useEffect(() => {
-    fetchReports();
+    fetchAll();
   }, []);
+
+  const refreshDetailIfOpen = useCallback(async () => {
+    if (expanded == null) return;
+    try {
+      const d = await api.getReport(expanded);
+      setDetail(d);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [expanded]);
+
+  const handleClassified = useCallback(async () => {
+    await Promise.all([fetchAll(), refreshDetailIfOpen()]);
+  }, [fetchAll, refreshDetailIfOpen]);
 
   const toggleExpand = async (id) => {
     if (expanded === id) {
@@ -111,36 +135,38 @@ function DmarcReportsTab() {
     }
   };
 
-  // Compute per-domain summaries
-  const domainSummaries = useMemo(() => {
-    const map = {};
-    for (const r of reports) {
-      const d = r.domain?.toLowerCase();
-      if (!d) continue;
-      if (!map[d]) {
-        map[d] = { domain: r.domain, totalMessages: 0, totalPassed: 0, reportCount: 0 };
-      }
-      map[d].totalMessages += r.total_messages;
-      map[d].totalPassed += Math.round((r.pass_rate / 100) * r.total_messages);
-      map[d].reportCount += 1;
-    }
-    return Object.values(map)
-      .map((s) => ({
-        ...s,
-        passRate: s.totalMessages > 0 ? Math.round((s.totalPassed / s.totalMessages) * 1000) / 10 : 0,
-      }))
-      .sort((a, b) => b.totalMessages - a.totalMessages);
-  }, [reports]);
+  // Ignored domains hidden by default.
+  const visibleDomainSummaries = useMemo(
+    () => (showIgnored ? domainSummaries : domainSummaries.filter((s) => !s.is_ignored)),
+    [domainSummaries, showIgnored]
+  );
 
-  // Filtered reports
+  const ignoredCount = useMemo(
+    () => domainSummaries.filter((s) => s.is_ignored).length,
+    [domainSummaries]
+  );
+
+  const ignoredDomainSet = useMemo(
+    () =>
+      new Set(
+        domainSummaries.filter((s) => s.is_ignored).map((s) => s.domain.toLowerCase())
+      ),
+    [domainSummaries]
+  );
+
   const filteredReports = useMemo(() => {
-    if (!activeDomainFilter) return reports;
-    return reports.filter(
-      (r) => r.domain?.toLowerCase() === activeDomainFilter.toLowerCase()
-    );
-  }, [reports, activeDomainFilter]);
+    let out = reports;
+    if (!showIgnored) {
+      out = out.filter((r) => !ignoredDomainSet.has((r.domain || "").toLowerCase()));
+    }
+    if (activeDomainFilter) {
+      out = out.filter(
+        (r) => r.domain?.toLowerCase() === activeDomainFilter.toLowerCase()
+      );
+    }
+    return out;
+  }, [reports, activeDomainFilter, showIgnored, ignoredDomainSet]);
 
-  // Grouped view
   const groupedReports = useMemo(() => {
     if (viewMode !== "grouped") return null;
     const groups = {};
@@ -157,27 +183,52 @@ function DmarcReportsTab() {
       {/* Help banner */}
       <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4 flex gap-3 items-start">
         <Info className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-        <div className="text-sm text-gray-400">
-          <span className="text-indigo-300 font-medium">What is this?</span>{" "}
-          DMARC reports show whether emails sent from your domains pass
-          authentication checks (SPF &amp; DKIM). A{" "}
-          <span className="text-green-400">high pass rate</span> means your
-          legitimate emails are properly authenticated.{" "}
-          <span className="text-red-400">Failures</span> may indicate
-          unauthorized senders or misconfiguration.
+        <div className="text-sm text-gray-400 space-y-1.5">
+          <div>
+            <span className="text-indigo-300 font-medium">What is this?</span>{" "}
+            DMARC reports show what other mail servers see when receiving
+            messages claiming to be from your domains.
+          </div>
+          <div>
+            <span className="text-green-400 inline-flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5" /> Authenticated
+            </span>{" "}
+            is real mail that passed DKIM or SPF.{" "}
+            <span className="text-sky-400 inline-flex items-center gap-1">
+              <ShieldOff className="w-3.5 h-3.5" /> Spoof blocked
+            </span>{" "}
+            is an unauthorized sender being rejected. That's DMARC doing its
+            job, not a misconfiguration. The metric that matters is{" "}
+            <span className="text-white">auth health</span>, which counts only
+            your real mail.
+          </div>
         </div>
       </div>
 
       {/* Domain summary cards */}
-      {!loading && domainSummaries.length > 0 && (
+      {!loading && visibleDomainSummaries.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-gray-400 mb-3">
-            Domain Health Overview
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-gray-400">
+              Domain Health Overview
+            </h3>
+            {ignoredCount > 0 && (
+              <button
+                onClick={() => setShowIgnored((v) => !v)}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                {showIgnored
+                  ? `Hide ignored (${ignoredCount})`
+                  : `Show ignored (${ignoredCount})`}
+              </button>
+            )}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {domainSummaries.map((s) => {
+            {visibleDomainSummaries.map((s) => {
               const isActive =
                 activeDomainFilter?.toLowerCase() === s.domain.toLowerCase();
+              const c = s.counts;
+              const showHealth = c.health_total > 0;
               return (
                 <button
                   key={s.domain}
@@ -188,30 +239,56 @@ function DmarcReportsTab() {
                     isActive
                       ? "bg-indigo-500/10 border-indigo-500/40 ring-1 ring-indigo-500/30"
                       : "bg-gray-900 border-gray-800 hover:border-gray-700"
-                  }`}
+                  } ${s.is_ignored ? "opacity-60" : ""}`}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    {getStatusIcon(s.passRate)}
+                    {s.is_ignored ? (
+                      <EyeOff className="w-5 h-5 text-gray-500" />
+                    ) : showHealth ? (
+                      healthIcon(c.health_rate)
+                    ) : (
+                      <Info className="w-5 h-5 text-gray-500" />
+                    )}
                     <span className="text-white font-mono text-sm truncate">
                       {s.domain}
                     </span>
                   </div>
                   <div className="flex items-baseline justify-between">
-                    <span
-                      className={`text-2xl font-bold ${
-                        s.passRate >= 90
-                          ? "text-green-400"
-                          : s.passRate >= 50
-                            ? "text-yellow-400"
-                            : "text-red-400"
-                      }`}
-                    >
-                      {s.passRate}%
-                    </span>
+                    {s.is_ignored ? (
+                      <span className="text-sm text-gray-500">Ignored</span>
+                    ) : showHealth ? (
+                      <span className={`text-2xl font-bold ${healthColor(c.health_rate)}`}>
+                        {c.health_rate}%
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-500">No real mail seen</span>
+                    )}
                     <span className="text-xs text-gray-500">
-                      {s.totalMessages.toLocaleString()} msgs &middot;{" "}
-                      {s.reportCount} reports
+                      {c.total_messages.toLocaleString()} msgs &middot;{" "}
+                      {s.report_count} reports
                     </span>
+                  </div>
+                  <div className="flex gap-3 mt-2 text-[11px] text-gray-500 flex-wrap">
+                    {c.aligned > 0 && (
+                      <span className="text-green-400">
+                        {c.aligned} ok
+                      </span>
+                    )}
+                    {c.misaligned_legitimate > 0 && (
+                      <span className="text-red-400">
+                        {c.misaligned_legitimate} failing
+                      </span>
+                    )}
+                    {c.rejected_spoof > 0 && (
+                      <span className="text-sky-400">
+                        {c.rejected_spoof} spoofs blocked
+                      </span>
+                    )}
+                    {c.unknown_failure > 0 && (
+                      <span className="text-amber-400">
+                        {c.unknown_failure} to triage
+                      </span>
+                    )}
                   </div>
                 </button>
               );
@@ -222,7 +299,7 @@ function DmarcReportsTab() {
               onClick={() => setActiveDomainFilter(null)}
               className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
             >
-              Clear filter &mdash; show all domains
+              Clear filter. Show all domains.
             </button>
           )}
         </div>
@@ -260,7 +337,7 @@ function DmarcReportsTab() {
             />
           </div>
           <button
-            onClick={fetchReports}
+            onClick={fetchAll}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <Search className="w-4 h-4" />
@@ -321,6 +398,7 @@ function DmarcReportsTab() {
                 detail={detail}
                 toggleExpand={toggleExpand}
                 showDomain={false}
+                onClassified={handleClassified}
               />
             </div>
           ))}
@@ -334,6 +412,7 @@ function DmarcReportsTab() {
             detail={detail}
             toggleExpand={toggleExpand}
             showDomain={true}
+            onClassified={handleClassified}
           />
         </div>
       )}
@@ -341,7 +420,7 @@ function DmarcReportsTab() {
   );
 }
 
-function ReportTable({ reports, expanded, detail, toggleExpand, showDomain }) {
+function ReportTable({ reports, expanded, detail, toggleExpand, showDomain, onClassified }) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -356,7 +435,7 @@ function ReportTable({ reports, expanded, detail, toggleExpand, showDomain }) {
           <th className="px-4 py-3 text-gray-400 font-medium">Date Range</th>
           <th className="px-4 py-3 text-gray-400 font-medium">Messages</th>
           <th className="px-4 py-3 text-gray-400 font-medium">
-            Authentication
+            Breakdown
           </th>
           <th className="px-4 py-3 text-gray-400 font-medium">Policy</th>
         </tr>
@@ -370,6 +449,7 @@ function ReportTable({ reports, expanded, detail, toggleExpand, showDomain }) {
             detail={detail}
             toggleExpand={toggleExpand}
             showDomain={showDomain}
+            onClassified={onClassified}
           />
         ))}
       </tbody>
@@ -377,11 +457,10 @@ function ReportTable({ reports, expanded, detail, toggleExpand, showDomain }) {
   );
 }
 
-function ReportRow({ r, expanded, detail, toggleExpand, showDomain }) {
+function ReportRow({ r, expanded, detail, toggleExpand, showDomain, onClassified }) {
   const isExpanded = expanded === r.id;
   const colSpan = showDomain ? 7 : 6;
-
-  const statusLabel = getStatusLabel(r.pass_rate);
+  const c = r.counts || {};
 
   return (
     <>
@@ -413,19 +492,37 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain }) {
           {r.total_messages.toLocaleString()}
         </td>
         <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <StatusBadge
-              status={
-                r.pass_rate >= 90
-                  ? "pass"
-                  : r.pass_rate >= 50
-                    ? "warn"
-                    : "fail"
-              }
-            />
-            <span className="text-gray-300 text-xs">
-              {r.pass_rate}% &middot; {statusLabel}
-            </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {c.aligned > 0 && (
+              <span className="inline-flex items-center gap-1 text-green-400 text-xs">
+                <ShieldCheck className="w-3 h-3" />
+                {c.aligned}
+              </span>
+            )}
+            {c.misaligned_legitimate > 0 && (
+              <span className="inline-flex items-center gap-1 text-red-400 text-xs">
+                <ShieldAlert className="w-3 h-3" />
+                {c.misaligned_legitimate}
+              </span>
+            )}
+            {c.rejected_spoof > 0 && (
+              <span className="inline-flex items-center gap-1 text-sky-400 text-xs">
+                <ShieldOff className="w-3 h-3" />
+                {c.rejected_spoof}
+              </span>
+            )}
+            {c.unknown_failure > 0 && (
+              <span className="inline-flex items-center gap-1 text-amber-400 text-xs">
+                <AlertTriangle className="w-3 h-3" />
+                {c.unknown_failure}
+              </span>
+            )}
+            {c.ignored > 0 && (
+              <span className="inline-flex items-center gap-1 text-gray-500 text-xs">
+                <EyeOff className="w-3 h-3" />
+                {c.ignored}
+              </span>
+            )}
           </div>
         </td>
         <td className="px-4 py-3 text-gray-400">{r.policy_p || "-"}</td>
@@ -433,7 +530,11 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain }) {
       {isExpanded && detail && (
         <tr>
           <td colSpan={colSpan} className="px-4 py-4 bg-gray-950">
-            <RecordTable records={detail.records} />
+            <RecordTable
+              records={detail.records}
+              policyDomain={detail.policy_domain || detail.domain}
+              onClassified={onClassified}
+            />
           </td>
         </tr>
       )}
@@ -441,7 +542,24 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain }) {
   );
 }
 
-function RecordTable({ records }) {
+function rowStateBg(state) {
+  switch (state) {
+    case "aligned":
+      return "bg-green-500/5";
+    case "misaligned_legitimate":
+      return "bg-red-500/5";
+    case "rejected_spoof":
+      return "bg-sky-500/5";
+    case "ignored":
+      return "bg-gray-500/5 opacity-60";
+    case "unknown_failure":
+      return "bg-amber-500/5";
+    default:
+      return "";
+  }
+}
+
+function RecordTable({ records, policyDomain, onClassified }) {
   if (!records || records.length === 0) {
     return <p className="text-gray-500 text-sm">No records in this report.</p>;
   }
@@ -450,39 +568,36 @@ function RecordTable({ records }) {
     <table className="w-full text-xs">
       <thead>
         <tr className="text-left border-b border-gray-800">
+          <th className="px-3 py-2 text-gray-400">State</th>
           <th className="px-3 py-2 text-gray-400">Source IP</th>
           <th className="px-3 py-2 text-gray-400">Count</th>
-          <th className="px-3 py-2 text-gray-400">Disposition</th>
           <th className="px-3 py-2 text-gray-400">DKIM</th>
           <th className="px-3 py-2 text-gray-400">SPF</th>
           <th className="px-3 py-2 text-gray-400">DKIM Align</th>
           <th className="px-3 py-2 text-gray-400">SPF Align</th>
           <th className="px-3 py-2 text-gray-400">Envelope From</th>
           <th className="px-3 py-2 text-gray-400">Header From</th>
+          <th className="px-3 py-2 text-gray-400 w-8"></th>
         </tr>
       </thead>
       <tbody>
         {records.map((rec) => {
+          const state = rec.state || "unknown_failure";
           const dkimPass = rec.dkim_alignment === "pass";
           const spfPass = rec.spf_alignment === "pass";
           return (
-            <tr
-              key={rec.id}
-              className={`border-b border-gray-900 ${dkimPass || spfPass ? "bg-green-500/5" : "bg-red-500/5"}`}
-            >
+            <tr key={rec.id} className={`border-b border-gray-900 ${rowStateBg(state)}`}>
+              <td className="px-3 py-2">
+                <StateBadge state={state} />
+              </td>
               <td className="px-3 py-2 font-mono text-gray-300">
                 {rec.source_ip}
               </td>
               <td className="px-3 py-2 text-gray-300">{rec.count}</td>
-              <td className="px-3 py-2 text-gray-300">
-                {rec.disposition || "-"}
-              </td>
               <td className="px-3 py-2">
                 <span
                   className={
-                    rec.dkim_result === "pass"
-                      ? "text-green-400"
-                      : "text-red-400"
+                    rec.dkim_result === "pass" ? "text-green-400" : "text-red-400"
                   }
                 >
                   {rec.dkim_result || "-"}
@@ -491,18 +606,14 @@ function RecordTable({ records }) {
               <td className="px-3 py-2">
                 <span
                   className={
-                    rec.spf_result === "pass"
-                      ? "text-green-400"
-                      : "text-red-400"
+                    rec.spf_result === "pass" ? "text-green-400" : "text-red-400"
                   }
                 >
                   {rec.spf_result || "-"}
                 </span>
               </td>
               <td className="px-3 py-2">
-                <span
-                  className={dkimPass ? "text-green-400" : "text-red-400"}
-                >
+                <span className={dkimPass ? "text-green-400" : "text-red-400"}>
                   {rec.dkim_alignment || "-"}
                 </span>
               </td>
@@ -516,6 +627,13 @@ function RecordTable({ records }) {
               </td>
               <td className="px-3 py-2 text-gray-400">
                 {rec.header_from || "-"}
+              </td>
+              <td className="px-3 py-2">
+                <ClassifyMenu
+                  record={rec}
+                  policyDomain={policyDomain}
+                  onChanged={onClassified}
+                />
               </td>
             </tr>
           );

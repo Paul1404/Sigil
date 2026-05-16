@@ -46,6 +46,27 @@ export const api = {
     return request(`/reports${query ? `?${query}` : ""}`);
   },
   getReport: (id) => request(`/reports/${id}`),
+  getDomainHealth: () => request("/reports-domains/health"),
+
+  // Source classifications
+  getClassifications: (policy_domain) => {
+    const qs = policy_domain
+      ? `?policy_domain=${encodeURIComponent(policy_domain)}`
+      : "";
+    return request(`/source-classifications${qs}`);
+  },
+  createClassification: (data) =>
+    request("/source-classifications", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateClassification: (id, data) =>
+    request(`/source-classifications/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteClassification: (id) =>
+    request(`/source-classifications/${id}`, { method: "DELETE" }),
 
   // TLS Reports
   getTlsReports: (domain) => {
