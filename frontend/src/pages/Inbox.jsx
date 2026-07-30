@@ -86,13 +86,17 @@ export default function Inbox() {
               {detail.subject || "(no subject)"}
             </h2>
             <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-              <div>
+              <div className="min-w-0">
                 <span className="text-gray-500">From </span>
-                <span className="text-gray-300">{detail.from_address || "-"}</span>
+                <span className="text-gray-300 break-all">
+                  {detail.from_address || "-"}
+                </span>
               </div>
-              <div>
+              <div className="min-w-0">
                 <span className="text-gray-500">To </span>
-                <span className="text-gray-300">{detail.to_address || "-"}</span>
+                <span className="text-gray-300 break-all">
+                  {detail.to_address || "-"}
+                </span>
               </div>
               <div>
                 <span className="text-gray-500">Date </span>
@@ -130,7 +134,7 @@ export default function Inbox() {
   // List view
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-white">Inbox</h2>
           <p className="text-sm text-gray-500 mt-1">

@@ -83,7 +83,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-white">Settings</h2>
           <p className="text-sm text-gray-500 mt-1">
@@ -165,15 +165,15 @@ export default function Settings() {
           {mailboxes.map((mb) => (
             <div
               key={mb.id}
-              className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center justify-between"
+              className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-3"
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 min-w-0">
                 <div
-                  className={`w-2.5 h-2.5 rounded-full ${mb.is_active ? "bg-green-400" : "bg-gray-600"}`}
+                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${mb.is_active ? "bg-green-400" : "bg-gray-600"}`}
                 />
-                <div>
+                <div className="min-w-0">
                   <h4 className="text-white font-medium">{mb.name}</h4>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 break-all">
                     {mb.username}@{mb.imap_host}:{mb.imap_port} / {mb.folder}
                   </p>
                   {mb.last_fetched_at && (
