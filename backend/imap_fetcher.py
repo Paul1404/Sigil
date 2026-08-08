@@ -4,6 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from email.header import decode_header
+from email.message import Message
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +30,7 @@ def _decode_header_value(value: str | None) -> str:
     return " ".join(result)
 
 
-def _extract_body(msg: email.message.Message) -> tuple[str | None, str | None]:
+def _extract_body(msg: Message) -> tuple[str | None, str | None]:
     """Extract plain text and HTML body from an email message."""
     body_text = None
     body_html = None
@@ -53,6 +54,7 @@ def _extract_body(msg: email.message.Message) -> tuple[str | None, str | None]:
 
 async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
     result = {"status": "success", "message": "", "reports_found": 0, "emails_found": 0}
+    mailbox_name = mailbox.name
 
     try:
         password = decrypt_password(mailbox.encrypted_password)
@@ -245,9 +247,22 @@ async def fetch_mailbox(mailbox: MailboxConfig, db: AsyncSession) -> dict:
         result["message"] = f"Fetched {reports_found} DMARC report(s), {tls_reports_found} TLS report(s), and {emails_found} email(s)"
 
     except Exception as e:
-        logger.exception("Error fetching mailbox %s", mailbox.name)
-        await db.rollback()
-        return {"status": "error", "message": f"Error processing emails: {e}", "reports_found": 0, "emails_found": 0}
+        error_message = str(e)
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("Could not roll back failed mailbox fetch for %s", mailbox_name)
+        logger.error(
+            "Error fetching mailbox %s",
+            mailbox_name,
+            exc_info=(type(e), e, e.__traceback__),
+        )
+        return {
+            "status": "error",
+            "message": f"Error processing emails: {error_message}",
+            "reports_found": 0,
+            "emails_found": 0,
+        }
     finally:
         if imap:
             try:
@@ -273,7 +288,7 @@ def _is_tls_report_sender(from_addr: str) -> bool:
 
 
 async def _try_parse_tls_report(
-    msg: email.message.Message,
+    msg: Message,
     mailbox_id: int,
     subject: str | None,
     msg_date: datetime | None,

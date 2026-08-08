@@ -171,9 +171,9 @@ class MailboxEmail(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     mailbox_id: Mapped[int] = mapped_column(ForeignKey("mailbox_configs.id"))
-    message_id: Mapped[str | None] = mapped_column(String(512), unique=True, nullable=True)
-    from_address: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    to_address: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    message_id: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
+    from_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    to_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     subject: Mapped[str | None] = mapped_column(Text, nullable=True)
     date: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
