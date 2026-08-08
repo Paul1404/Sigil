@@ -1338,44 +1338,21 @@ function TriageQueueTab({ onChanged }) {
 }
 
 function TriageCard({ item, peek, busy, onClassify, onSkip }) {
-  const headerFromMatchesDomain =
-    item.header_from.length === 1 &&
-    item.header_from[0].toLowerCase() === item.policy_domain.toLowerCase();
+  const [recommendation, setRecommendation] = useState(null);
+  const [recommendationError, setRecommendationError] = useState(false);
 
-  const dkimAllFail =
-    item.dkim_results.length > 0 &&
-    item.dkim_results.every((r) => r !== "pass");
-  const spfAllFail =
-    item.spf_results.length > 0 && item.spf_results.every((r) => r !== "pass");
-  const dispositionRejected = item.dispositions.some(
-    (d) => d === "reject" || d === "quarantine",
-  );
-
-  // Heuristic hints to help the user decide quickly.
-  const hints = [];
-  if (headerFromMatchesDomain) {
-    hints.push({
-      tone: "warn",
-      text: "Header From matches your domain. If this is a real sender, mark trusted and fix SPF/DKIM.",
-    });
-  } else if (item.header_from.length > 0) {
-    hints.push({
-      tone: "info",
-      text: `Header From is ${item.header_from.join(", ")}, not your domain. Often a third party.`,
-    });
-  }
-  if (dkimAllFail && spfAllFail) {
-    hints.push({
-      tone: "danger",
-      text: "Both DKIM and SPF fail. Looks like a spoof unless you recognise this sender.",
-    });
-  }
-  if (dispositionRejected) {
-    hints.push({
-      tone: "info",
-      text: "DMARC already rejected/quarantined. Marking unauthorized confirms it.",
-    });
-  }
+  useEffect(() => {
+    let active = true;
+    setRecommendation(null);
+    setRecommendationError(false);
+    api
+      .getTriageRecommendation(item)
+      .then((result) => active && setRecommendation(result))
+      .catch(() => active && setRecommendationError(true));
+    return () => {
+      active = false;
+    };
+  }, [item]);
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
@@ -1520,25 +1497,10 @@ function TriageCard({ item, peek, busy, onClassify, onSkip }) {
           />
         </div>
 
-        {hints.length > 0 && (
-          <div className="space-y-1.5">
-            {hints.map((h, i) => (
-              <div
-                key={i}
-                className={`text-xs px-3 py-2 rounded-md border flex items-start gap-2 ${
-                  h.tone === "danger"
-                    ? "bg-red-500/5 border-red-500/20 text-red-200"
-                    : h.tone === "warn"
-                      ? "bg-amber-500/5 border-amber-500/20 text-amber-200"
-                      : "bg-gray-800/60 border-gray-700 text-gray-300"
-                }`}
-              >
-                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-80" />
-                <span>{h.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <TriageRecommendation
+          recommendation={recommendation}
+          failed={recommendationError}
+        />
       </div>
 
       {/* Actions */}
@@ -1551,6 +1513,7 @@ function TriageCard({ item, peek, busy, onClassify, onSkip }) {
             shortcut="T"
             icon={ShieldCheck}
             label="Trusted"
+            recommended={recommendation?.action === "trusted"}
           />
           <TriageAction
             onClick={() => onClassify("unauthorized")}
@@ -1559,6 +1522,7 @@ function TriageCard({ item, peek, busy, onClassify, onSkip }) {
             shortcut="U"
             icon={ShieldOff}
             label="Unauthorized"
+            recommended={recommendation?.action === "unauthorized"}
           />
           <TriageAction
             onClick={() => onClassify("ignored")}
@@ -1624,7 +1588,90 @@ function Field({ label, value }) {
   );
 }
 
-function TriageAction({ onClick, disabled, tone, shortcut, icon: Icon, label }) {
+function TriageRecommendation({ recommendation, failed }) {
+  if (failed) {
+    return (
+      <div className="text-xs px-3 py-2 rounded-lg border bg-gray-800/60 border-gray-700 text-gray-400 flex items-start gap-2">
+        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+        Live SPF evidence is unavailable. Review this source manually.
+      </div>
+    );
+  }
+  if (!recommendation) {
+    return (
+      <div className="rounded-lg border border-gray-800 bg-gray-950/40 px-4 py-3 text-xs text-gray-500 flex items-center gap-2">
+        <div className="animate-spin rounded-full h-3.5 w-3.5 border-b border-indigo-400" />
+        Checking current SPF evidence...
+      </div>
+    );
+  }
+
+  const actionable = recommendation.action !== "review";
+  const actionLabel =
+    recommendation.action === "trusted"
+      ? "Trusted"
+      : recommendation.action === "unauthorized"
+        ? "Unauthorized"
+        : "Review manually";
+  const tone =
+    recommendation.action === "trusted"
+      ? "border-green-500/30 bg-green-500/5"
+      : recommendation.action === "unauthorized"
+        ? "border-sky-500/30 bg-sky-500/5"
+        : "border-amber-500/30 bg-amber-500/5";
+  const labelTone =
+    recommendation.action === "trusted"
+      ? "text-green-200 bg-green-500/15"
+      : recommendation.action === "unauthorized"
+        ? "text-sky-200 bg-sky-500/15"
+        : "text-amber-200 bg-amber-500/15";
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${tone}`}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-indigo-300" />
+          <span className="text-xs uppercase tracking-wide text-gray-400">
+            Recommended
+          </span>
+          <span className={`text-sm font-semibold px-2 py-0.5 rounded ${labelTone}`}>
+            {actionLabel}
+          </span>
+        </div>
+        <span className="text-[10px] uppercase tracking-wide text-gray-500">
+          {recommendation.confidence} confidence
+        </span>
+      </div>
+      <ul className="mt-2.5 space-y-1 text-xs text-gray-200">
+        {recommendation.reasons.map((reason) => (
+          <li key={reason} className="flex gap-2">
+            <span className="text-indigo-300">•</span>
+            <span>{reason}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2.5 pt-2.5 border-t border-white/10 text-[11px] text-gray-400 flex gap-2 items-start">
+        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+        <span>
+          Live SPF: <span className="font-mono">{recommendation.spf_result}</span>{" "}
+          for <span className="font-mono">{recommendation.spf_domain}</span>.{" "}
+          {recommendation.caveats.join(" ")}
+          {actionable && " Confirm with the highlighted action below."}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TriageAction({
+  onClick,
+  disabled,
+  tone,
+  shortcut,
+  icon: Icon,
+  label,
+  recommended = false,
+}) {
   const tones = {
     trusted:
       "bg-green-500/10 border-green-500/30 text-green-200 hover:bg-green-500/20 hover:border-green-500/50",
@@ -1637,10 +1684,15 @@ function TriageAction({ onClick, disabled, tone, shortcut, icon: Icon, label }) 
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${tones[tone]}`}
+      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${tones[tone]} ${recommended ? "ring-2 ring-indigo-400/60 ring-offset-2 ring-offset-gray-950" : ""}`}
     >
       <Icon className="w-4 h-4" />
       {label}
+      {recommended && (
+        <span className="ml-1 text-[9px] uppercase tracking-wide text-indigo-100 bg-indigo-500/25 px-1.5 py-0.5 rounded">
+          Recommended
+        </span>
+      )}
       <kbd className="ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-black/30 rounded border border-white/10">
         {shortcut}
       </kbd>

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # --- Mailbox ---
@@ -270,11 +271,36 @@ class TriageItem(BaseModel):
     envelope_from: list[str]
     dkim_results: list[str]
     spf_results: list[str]
+    dkim_alignment_results: list[str]
+    spf_alignment_results: list[str]
     dispositions: list[str]
     total_count: int
     report_count: int
     first_seen: datetime | None
     last_seen: datetime | None
+
+
+class TriageRecommendationRequest(BaseModel):
+    source_ip: str
+    policy_domain: str
+    header_from: list[str] = Field(default_factory=list)
+    envelope_from: list[str] = Field(default_factory=list)
+    dkim_results: list[str] = Field(default_factory=list)
+    spf_results: list[str] = Field(default_factory=list)
+    dkim_alignment_results: list[str] = Field(default_factory=list)
+    spf_alignment_results: list[str] = Field(default_factory=list)
+    dispositions: list[str] = Field(default_factory=list)
+
+
+class TriageRecommendationResponse(BaseModel):
+    action: Literal["trusted", "unauthorized", "review"]
+    confidence: Literal["high", "medium", "low"]
+    title: str
+    reasons: list[str]
+    caveats: list[str]
+    checked_at: datetime
+    spf_domain: str
+    spf_result: str
 
 
 # --- Fetch ---
