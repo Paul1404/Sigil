@@ -58,7 +58,7 @@ function MxParsed({ parsed }) {
           {parsed.hosts.map((h, i) => (
             <tr key={i} className="border-t border-gray-900">
               <td className="pr-3 py-1 text-indigo-300 font-mono font-medium">{h.priority}</td>
-              <td className="py-1 text-white font-mono">{h.host}</td>
+              <td className="py-1 text-white font-mono break-all">{h.host}</td>
             </tr>
           ))}
         </tbody>
@@ -85,7 +85,9 @@ function DmarcParsed({ parsed }) {
           {tags.map(([tag, info]) => (
             <tr key={tag} className="border-t border-gray-900">
               <td className="pr-3 py-1 text-indigo-300 font-mono font-medium">{tag}</td>
-              <td className="pr-3 py-1 text-white font-mono">{info.value}</td>
+              <td className="pr-3 py-1 text-white font-mono break-all">
+                {info.value}
+              </td>
               <td className="py-1 text-gray-500">{info.description}</td>
             </tr>
           ))}

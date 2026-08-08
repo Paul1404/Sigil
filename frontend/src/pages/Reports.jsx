@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -26,6 +26,7 @@ import {
 import { api } from "../api";
 import { StateBadge } from "../components/StateBadge";
 import ClassifyMenu from "../components/ClassifyMenu";
+import SnapField from "../components/SnapField";
 
 function healthIcon(rate) {
   if (rate >= 95) return <ShieldCheck className="w-5 h-5 text-green-400" />;
@@ -66,7 +67,7 @@ export default function Reports() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1 w-fit">
+      <div className="flex flex-wrap gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1 w-fit max-w-full">
         <button
           onClick={() => setActiveTab("dmarc")}
           className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -339,32 +340,32 @@ function DmarcReportsTab({ triageCount, onOpenTriage, onClassificationChanged })
       {/* Filters & view toggle */}
       <div className="flex flex-wrap gap-3 items-end justify-between">
         <div className="flex flex-wrap gap-3 items-end">
-          <div>
+          <div className="grow sm:grow-0">
             <label className="block text-xs text-gray-400 mb-1">Domain</label>
             <input
               type="text"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="example.com"
-              className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
             />
           </div>
-          <div>
+          <div className="grow sm:grow-0">
             <label className="block text-xs text-gray-400 mb-1">From</label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
             />
           </div>
-          <div>
+          <div className="grow sm:grow-0">
             <label className="block text-xs text-gray-400 mb-1">To</label>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
             />
           </div>
           <button
@@ -559,25 +560,33 @@ function DomainHealthCard({ summary: s, isActive, onToggleFilter, onChanged }) {
 
 function ReportTable({ reports, expanded, detail, toggleExpand, showDomain, onClassified }) {
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b border-gray-800 text-left">
-          <th className="px-4 py-3 text-gray-400 font-medium w-8"></th>
-          {showDomain && (
-            <th className="px-4 py-3 text-gray-400 font-medium">Domain</th>
-          )}
-          <th className="px-4 py-3 text-gray-400 font-medium">
-            Reporting Organization
-          </th>
-          <th className="px-4 py-3 text-gray-400 font-medium">Date Range</th>
-          <th className="px-4 py-3 text-gray-400 font-medium">Messages</th>
-          <th className="px-4 py-3 text-gray-400 font-medium">
-            Breakdown
-          </th>
-          <th className="px-4 py-3 text-gray-400 font-medium">Policy</th>
-        </tr>
-      </thead>
-      <tbody>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-800 text-left">
+            <th className="px-4 py-3 text-gray-400 font-medium w-8"></th>
+            {showDomain && (
+              <th className="px-4 py-3 text-gray-400 font-medium">Domain</th>
+            )}
+            <th
+              className={`px-4 py-3 text-gray-400 font-medium ${
+                showDomain ? "hidden md:table-cell" : ""
+              }`}
+            >
+              Reporting Organization
+            </th>
+            <th className="hidden lg:table-cell px-4 py-3 text-gray-400 font-medium">
+              Date Range
+            </th>
+            <th className="px-4 py-3 text-gray-400 font-medium">Messages</th>
+            <th className="px-4 py-3 text-gray-400 font-medium">
+              Breakdown
+            </th>
+            <th className="hidden lg:table-cell px-4 py-3 text-gray-400 font-medium">
+              Policy
+            </th>
+          </tr>
+        </thead>
         {reports.map((r) => (
           <ReportRow
             key={r.id}
@@ -589,8 +598,8 @@ function ReportTable({ reports, expanded, detail, toggleExpand, showDomain, onCl
             onClassified={onClassified}
           />
         ))}
-      </tbody>
-    </table>
+      </table>
+    </div>
   );
 }
 
@@ -599,12 +608,19 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain, onClassified
   const colSpan = showDomain ? 7 : 6;
   const c = r.counts || {};
 
-  return (
+  const dateRange = (
     <>
-      <tr
-        onClick={() => toggleExpand(r.id)}
-        className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer transition-colors"
-      >
+      {r.date_range_begin
+        ? new Date(r.date_range_begin).toLocaleDateString()
+        : "-"}
+      {" - "}
+      {r.date_range_end ? new Date(r.date_range_end).toLocaleDateString() : "-"}
+    </>
+  );
+
+  return (
+    <tbody className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer transition-colors">
+      <tr onClick={() => toggleExpand(r.id)}>
         <td className="px-4 py-3">
           {isExpanded ? (
             <ChevronDown className="w-4 h-4 text-gray-500" />
@@ -613,17 +629,19 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain, onClassified
           )}
         </td>
         {showDomain && (
-          <td className="px-4 py-3 text-white font-mono">{r.domain}</td>
+          <td className="px-4 py-3 text-white font-mono break-all">
+            {r.domain}
+          </td>
         )}
-        <td className="px-4 py-3 text-gray-300">{r.org_name || "-"}</td>
-        <td className="px-4 py-3 text-gray-400">
-          {r.date_range_begin
-            ? new Date(r.date_range_begin).toLocaleDateString()
-            : "-"}
-          {" - "}
-          {r.date_range_end
-            ? new Date(r.date_range_end).toLocaleDateString()
-            : "-"}
+        <td
+          className={`px-4 py-3 text-gray-300 ${
+            showDomain ? "hidden md:table-cell" : ""
+          }`}
+        >
+          {r.org_name || "-"}
+        </td>
+        <td className="hidden lg:table-cell px-4 py-3 text-gray-400">
+          {dateRange}
         </td>
         <td className="px-4 py-3 text-gray-300">
           {r.total_messages.toLocaleString()}
@@ -662,10 +680,26 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain, onClassified
             )}
           </div>
         </td>
-        <td className="px-4 py-3 text-gray-400">{r.policy_p || "-"}</td>
+        <td className="hidden lg:table-cell px-4 py-3 text-gray-400">
+          {r.policy_p || "-"}
+        </td>
+      </tr>
+      {/* Snap-in row: columns hidden on narrow screens, shown as fields */}
+      <tr className="lg:hidden" onClick={() => toggleExpand(r.id)}>
+        <td colSpan={colSpan} className="px-4 pb-3 pt-0">
+          <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+            {showDomain && (
+              <div className="md:hidden">
+                <SnapField label="Reporting Org">{r.org_name || "-"}</SnapField>
+              </div>
+            )}
+            <SnapField label="Date Range">{dateRange}</SnapField>
+            <SnapField label="Policy">{r.policy_p || "-"}</SnapField>
+          </div>
+        </td>
       </tr>
       {isExpanded && detail && (
-        <tr>
+        <tr className="cursor-default">
           <td colSpan={colSpan} className="px-4 py-4 bg-gray-950">
             <RecordTable
               records={detail.records}
@@ -675,7 +709,7 @@ function ReportRow({ r, expanded, detail, toggleExpand, showDomain, onClassified
           </td>
         </tr>
       )}
-    </>
+    </tbody>
   );
 }
 
@@ -842,114 +876,187 @@ function RecordTable({ records, policyDomain, onClassified }) {
         )}
       </div>
 
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-left border-b border-gray-800">
-            <th className="px-3 py-2 w-8">
-              <input
-                type="checkbox"
-                aria-label="Select all records"
-                className="accent-indigo-500"
-                checked={allSelected}
-                ref={(el) => {
-                  if (el) el.indeterminate = someSelected;
-                }}
-                onChange={toggleAll}
-              />
-            </th>
-            <th className="px-3 py-2 text-gray-400">State</th>
-            <th className="px-3 py-2 text-gray-400">Source IP</th>
-            <th className="px-3 py-2 text-gray-400">Count</th>
-            <th className="px-3 py-2 text-gray-400">DKIM</th>
-            <th className="px-3 py-2 text-gray-400">SPF</th>
-            <th className="px-3 py-2 text-gray-400">DKIM Align</th>
-            <th className="px-3 py-2 text-gray-400">SPF Align</th>
-            <th className="px-3 py-2 text-gray-400">Envelope From</th>
-            <th className="px-3 py-2 text-gray-400">Header From</th>
-            <th className="px-3 py-2 text-gray-400 w-8"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {records.map((rec) => {
-            const state = rec.state || "unknown_failure";
-            const dkimPass = rec.dkim_alignment === "pass";
-            const spfPass = rec.spf_alignment === "pass";
-            const isSelected = selected.has(rec.id);
-            return (
-              <tr
-                key={rec.id}
-                className={`border-b border-gray-900 ${rowStateBg(state)} ${
-                  isSelected ? "bg-indigo-500/10" : ""
-                }`}
-              >
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select record ${rec.id}`}
-                    className="accent-indigo-500"
-                    checked={isSelected}
-                    onChange={(e) => toggleOne(rec.id, e.target.checked)}
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <StateBadge state={state} />
-                </td>
-                <td className="px-3 py-2 font-mono text-gray-300">
-                  {rec.source_ip}
-                </td>
-                <td className="px-3 py-2 text-gray-300">{rec.count}</td>
-                <td className="px-3 py-2">
-                  <span
-                    className={
-                      rec.dkim_result === "pass"
-                        ? "text-green-400"
-                        : "text-red-400"
-                    }
-                  >
-                    {rec.dkim_result || "-"}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <span
-                    className={
-                      rec.spf_result === "pass"
-                        ? "text-green-400"
-                        : "text-red-400"
-                    }
-                  >
-                    {rec.spf_result || "-"}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <span
-                    className={dkimPass ? "text-green-400" : "text-red-400"}
-                  >
-                    {rec.dkim_alignment || "-"}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <span className={spfPass ? "text-green-400" : "text-red-400"}>
-                    {rec.spf_alignment || "-"}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-gray-400">
-                  {rec.envelope_from || "-"}
-                </td>
-                <td className="px-3 py-2 text-gray-400">
-                  {rec.header_from || "-"}
-                </td>
-                <td className="px-3 py-2">
-                  <ClassifyMenu
-                    record={rec}
-                    policyDomain={policyDomain}
-                    onChanged={onClassified}
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left border-b border-gray-800">
+              <th className="px-3 py-2 w-8">
+                <input
+                  type="checkbox"
+                  aria-label="Select all records"
+                  className="accent-indigo-500"
+                  checked={allSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected;
+                  }}
+                  onChange={toggleAll}
+                />
+              </th>
+              <th className="px-3 py-2 text-gray-400">State</th>
+              <th className="px-3 py-2 text-gray-400">Source IP</th>
+              <th className="px-3 py-2 text-gray-400">Count</th>
+              <th className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                DKIM
+              </th>
+              <th className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                SPF
+              </th>
+              <th className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                DKIM Align
+              </th>
+              <th className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                SPF Align
+              </th>
+              <th className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                Envelope From
+              </th>
+              <th className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                Header From
+              </th>
+              <th className="px-3 py-2 text-gray-400 w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.map((rec) => {
+              const state = rec.state || "unknown_failure";
+              const dkimPass = rec.dkim_alignment === "pass";
+              const spfPass = rec.spf_alignment === "pass";
+              const isSelected = selected.has(rec.id);
+              const rowBg = `${rowStateBg(state)} ${
+                isSelected ? "bg-indigo-500/10" : ""
+              }`;
+              return (
+                <Fragment key={rec.id}>
+                  <tr className={`max-xl:border-b-0 border-b border-gray-900 ${rowBg}`}>
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select record ${rec.id}`}
+                        className="accent-indigo-500"
+                        checked={isSelected}
+                        onChange={(e) => toggleOne(rec.id, e.target.checked)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <StateBadge state={state} />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-gray-300 break-all">
+                      {rec.source_ip}
+                    </td>
+                    <td className="px-3 py-2 text-gray-300">{rec.count}</td>
+                    <td className="hidden xl:table-cell px-3 py-2">
+                      <span
+                        className={
+                          rec.dkim_result === "pass"
+                            ? "text-green-400"
+                            : "text-red-400"
+                        }
+                      >
+                        {rec.dkim_result || "-"}
+                      </span>
+                    </td>
+                    <td className="hidden xl:table-cell px-3 py-2">
+                      <span
+                        className={
+                          rec.spf_result === "pass"
+                            ? "text-green-400"
+                            : "text-red-400"
+                        }
+                      >
+                        {rec.spf_result || "-"}
+                      </span>
+                    </td>
+                    <td className="hidden xl:table-cell px-3 py-2">
+                      <span
+                        className={dkimPass ? "text-green-400" : "text-red-400"}
+                      >
+                        {rec.dkim_alignment || "-"}
+                      </span>
+                    </td>
+                    <td className="hidden xl:table-cell px-3 py-2">
+                      <span
+                        className={spfPass ? "text-green-400" : "text-red-400"}
+                      >
+                        {rec.spf_alignment || "-"}
+                      </span>
+                    </td>
+                    <td className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                      {rec.envelope_from || "-"}
+                    </td>
+                    <td className="hidden xl:table-cell px-3 py-2 text-gray-400">
+                      {rec.header_from || "-"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <ClassifyMenu
+                        record={rec}
+                        policyDomain={policyDomain}
+                        onChanged={onClassified}
+                      />
+                    </td>
+                  </tr>
+                  {/* Snap-in row: columns hidden on narrow screens */}
+                  <tr className={`xl:hidden border-b border-gray-900 ${rowBg}`}>
+                    <td colSpan={11} className="px-3 pb-2 pt-0">
+                      <div className="flex flex-wrap gap-x-5 gap-y-2">
+                        <SnapField label="DKIM">
+                          <span
+                            className={
+                              rec.dkim_result === "pass"
+                                ? "text-green-400"
+                                : "text-red-400"
+                            }
+                          >
+                            {rec.dkim_result || "-"}
+                          </span>
+                        </SnapField>
+                        <SnapField label="SPF">
+                          <span
+                            className={
+                              rec.spf_result === "pass"
+                                ? "text-green-400"
+                                : "text-red-400"
+                            }
+                          >
+                            {rec.spf_result || "-"}
+                          </span>
+                        </SnapField>
+                        <SnapField label="DKIM Align">
+                          <span
+                            className={
+                              dkimPass ? "text-green-400" : "text-red-400"
+                            }
+                          >
+                            {rec.dkim_alignment || "-"}
+                          </span>
+                        </SnapField>
+                        <SnapField label="SPF Align">
+                          <span
+                            className={
+                              spfPass ? "text-green-400" : "text-red-400"
+                            }
+                          >
+                            {rec.spf_alignment || "-"}
+                          </span>
+                        </SnapField>
+                        <SnapField label="Envelope From">
+                          <span className="text-gray-400 break-all">
+                            {rec.envelope_from || "-"}
+                          </span>
+                        </SnapField>
+                        <SnapField label="Header From">
+                          <span className="text-gray-400 break-all">
+                            {rec.header_from || "-"}
+                          </span>
+                        </SnapField>
+                      </div>
+                    </td>
+                  </tr>
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1278,7 +1385,9 @@ function TriageCard({ item, peek, busy, onClassify, onSkip }) {
           <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
             Source IP
           </div>
-          <div className="text-2xl font-mono text-white">{item.source_ip}</div>
+          <div className="text-2xl font-mono text-white break-all">
+            {item.source_ip}
+          </div>
         </div>
         <div className="text-right">
           <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
@@ -1679,82 +1788,111 @@ function TlsReportsTab() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-left">
-                <th className="px-4 py-3 text-gray-400 font-medium">Domain</th>
-                <th className="px-4 py-3 text-gray-400 font-medium">Reporter</th>
-                <th className="px-4 py-3 text-gray-400 font-medium">Date Range</th>
-                <th className="px-4 py-3 text-gray-400 font-medium">MX Host</th>
-                <th className="px-4 py-3 text-gray-400 font-medium">Encrypted</th>
-                <th className="px-4 py-3 text-gray-400 font-medium">Failed</th>
-                <th className="px-4 py-3 text-gray-400 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-left">
+                  <th className="px-4 py-3 text-gray-400 font-medium">Domain</th>
+                  <th className="hidden lg:table-cell px-4 py-3 text-gray-400 font-medium">
+                    Reporter
+                  </th>
+                  <th className="hidden lg:table-cell px-4 py-3 text-gray-400 font-medium">
+                    Date Range
+                  </th>
+                  <th className="hidden lg:table-cell px-4 py-3 text-gray-400 font-medium">
+                    MX Host
+                  </th>
+                  <th className="px-4 py-3 text-gray-400 font-medium">Encrypted</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium">Failed</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium">Status</th>
+                </tr>
+              </thead>
               {filteredReports.map((r) => {
                 const total = r.total_success + r.total_failure;
                 const rate =
                   total > 0
                     ? Math.round((r.total_success / total) * 1000) / 10
                     : 0;
+                const dateRange = (
+                  <>
+                    {r.date_range_begin
+                      ? new Date(r.date_range_begin).toLocaleDateString()
+                      : "-"}
+                    {" - "}
+                    {r.date_range_end
+                      ? new Date(r.date_range_end).toLocaleDateString()
+                      : "-"}
+                  </>
+                );
                 return (
-                  <tr
+                  <tbody
                     key={r.id}
                     className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors"
                   >
-                    <td className="px-4 py-3 text-white font-mono">
-                      {r.policy_domain || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      {r.org_name || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {r.date_range_begin
-                        ? new Date(r.date_range_begin).toLocaleDateString()
-                        : "-"}
-                      {" - "}
-                      {r.date_range_end
-                        ? new Date(r.date_range_end).toLocaleDateString()
-                        : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">
-                      {r.mx_host || "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-green-400">
-                        {r.total_success.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          r.total_failure > 0
-                            ? "text-red-400"
-                            : "text-gray-500"
-                        }
-                      >
-                        {r.total_failure.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {r.total_failure === 0 ? (
-                        <span className="inline-flex items-center gap-1 text-green-400 text-xs">
-                          <Lock className="w-3 h-3" />
-                          Encrypted
+                    <tr>
+                      <td className="px-4 py-3 text-white font-mono break-all">
+                        {r.policy_domain || "-"}
+                      </td>
+                      <td className="hidden lg:table-cell px-4 py-3 text-gray-300">
+                        {r.org_name || "-"}
+                      </td>
+                      <td className="hidden lg:table-cell px-4 py-3 text-gray-400">
+                        {dateRange}
+                      </td>
+                      <td className="hidden lg:table-cell px-4 py-3 text-gray-400 font-mono text-xs">
+                        {r.mx_host || "-"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-green-400">
+                          {r.total_success.toLocaleString()}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-red-400 text-xs">
-                          <Unlock className="w-3 h-3" />
-                          {rate}% encrypted
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            r.total_failure > 0
+                              ? "text-red-400"
+                              : "text-gray-500"
+                          }
+                        >
+                          {r.total_failure.toLocaleString()}
                         </span>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.total_failure === 0 ? (
+                          <span className="inline-flex items-center gap-1 text-green-400 text-xs">
+                            <Lock className="w-3 h-3" />
+                            Encrypted
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-red-400 text-xs">
+                            <Unlock className="w-3 h-3" />
+                            {rate}% encrypted
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    {/* Snap-in row: columns hidden on narrow screens */}
+                    <tr className="lg:hidden">
+                      <td colSpan={7} className="px-4 pb-3 pt-0">
+                        <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                          <SnapField label="Reporter">
+                            {r.org_name || "-"}
+                          </SnapField>
+                          <SnapField label="Date Range">{dateRange}</SnapField>
+                          <SnapField label="MX Host">
+                            <span className="font-mono break-all">
+                              {r.mx_host || "-"}
+                            </span>
+                          </SnapField>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
                 );
               })}
-            </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       )}
     </div>

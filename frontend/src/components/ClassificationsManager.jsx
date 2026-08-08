@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Trash2, ShieldCheck, ShieldOff, EyeOff } from "lucide-react";
 import { api } from "../api";
+import SnapField from "./SnapField";
 
 const CLASS_OPTIONS = [
   { value: "trusted", label: "Trusted", icon: ShieldCheck, color: "text-green-400" },
@@ -63,7 +64,7 @@ export default function ClassificationsManager() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-white">Source Classifications</h3>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -101,56 +102,73 @@ export default function ClassificationsManager() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-left">
-                <th className="px-4 py-3 text-gray-400 font-medium text-xs">Domain</th>
-                <th className="px-4 py-3 text-gray-400 font-medium text-xs">Match</th>
-                <th className="px-4 py-3 text-gray-400 font-medium text-xs">Value</th>
-                <th className="px-4 py-3 text-gray-400 font-medium text-xs">Classification</th>
-                <th className="px-4 py-3 text-gray-400 font-medium text-xs">Notes</th>
-                <th className="px-4 py-3 text-gray-400 font-medium text-xs w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-left">
+                  <th className="px-4 py-3 text-gray-400 font-medium text-xs">Domain</th>
+                  <th className="hidden md:table-cell px-4 py-3 text-gray-400 font-medium text-xs">Match</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium text-xs">Value</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium text-xs">Classification</th>
+                  <th className="hidden md:table-cell px-4 py-3 text-gray-400 font-medium text-xs">Notes</th>
+                  <th className="px-4 py-3 text-gray-400 font-medium text-xs w-10"></th>
+                </tr>
+              </thead>
               {rows.map((row) => {
                 const meta = classMeta(row.classification);
                 const Icon = meta.icon;
+                const matchLabel =
+                  MATCH_OPTIONS.find((m) => m.value === row.match_type)?.label ||
+                  row.match_type;
                 return (
-                  <tr key={row.id} className="border-b border-gray-800/50">
-                    <td className="px-4 py-3 font-mono text-gray-200 text-xs">
-                      {row.policy_domain}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">
-                      {MATCH_OPTIONS.find((m) => m.value === row.match_type)?.label ||
-                        row.match_type}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-gray-200 text-xs">
-                      {row.match_value}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 text-xs ${meta.color}`}>
-                        <Icon className="w-3.5 h-3.5" />
-                        {meta.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {row.notes || ""}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleDelete(row.id)}
-                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
+                  <tbody key={row.id} className="border-b border-gray-800/50">
+                    <tr>
+                      <td className="px-4 py-3 font-mono text-gray-200 text-xs break-all">
+                        {row.policy_domain}
+                      </td>
+                      <td className="hidden md:table-cell px-4 py-3 text-gray-400 text-xs">
+                        {matchLabel}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-gray-200 text-xs break-all">
+                        {row.match_value}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 text-xs ${meta.color}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                          {meta.label}
+                        </span>
+                      </td>
+                      <td className="hidden md:table-cell px-4 py-3 text-gray-500 text-xs">
+                        {row.notes || ""}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleDelete(row.id)}
+                          className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-800 rounded transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                    {/* Snap-in row: columns hidden on narrow screens */}
+                    <tr className="md:hidden">
+                      <td colSpan={6} className="px-4 pb-3 pt-0">
+                        <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                          <SnapField label="Match">{matchLabel}</SnapField>
+                          {row.notes && (
+                            <SnapField label="Notes">
+                              <span className="text-gray-500">{row.notes}</span>
+                            </SnapField>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
                 );
               })}
-            </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       )}
     </div>

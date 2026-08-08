@@ -97,7 +97,7 @@ export default function DNS() {
 
       {/* Manual check form */}
       <form onSubmit={handleSubmit} className="flex flex-wrap gap-3 items-end">
-        <div>
+        <div className="grow sm:grow-0">
           <label className="block text-xs text-gray-400 mb-1">Domain</label>
           <input
             type="text"
@@ -105,10 +105,10 @@ export default function DNS() {
             onChange={(e) => setDomain(e.target.value)}
             placeholder="example.com"
             required
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none w-64"
+            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none w-full sm:w-64"
           />
         </div>
-        <div>
+        <div className="grow sm:grow-0">
           <label className="block text-xs text-gray-400 mb-1">
             DKIM Selector <span className="text-gray-600">(optional)</span>
           </label>
@@ -117,7 +117,7 @@ export default function DNS() {
             value={selector}
             onChange={(e) => setSelector(e.target.value)}
             placeholder="google, default, s1..."
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none w-48"
+            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none w-full sm:w-48"
           />
         </div>
         <button
