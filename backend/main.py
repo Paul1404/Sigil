@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -63,7 +64,10 @@ from schemas import (
     TlsDomainSummary,
     TlsReportSummary,
     TriageItem,
+    TriageRecommendationRequest,
+    TriageRecommendationResponse,
 )
+from triage_recommender import build_recommendation, evaluate_spf_cached
 
 VALID_CLASSIFICATIONS = {CLASS_TRUSTED, CLASS_UNAUTHORIZED, CLASS_IGNORED}
 VALID_MATCH_TYPES = {MATCH_DOMAIN, MATCH_SOURCE_IP, MATCH_HEADER_FROM, MATCH_ENVELOPE_FROM}
@@ -434,6 +438,8 @@ async def triage_queue(
                     "envelope_from": set(),
                     "dkim_results": set(),
                     "spf_results": set(),
+                    "dkim_alignment_results": set(),
+                    "spf_alignment_results": set(),
                     "dispositions": set(),
                     "total_count": 0,
                     "report_ids": set(),
@@ -449,6 +455,10 @@ async def triage_queue(
                 g["dkim_results"].add(rec.dkim_result)
             if rec.spf_result:
                 g["spf_results"].add(rec.spf_result)
+            if rec.dkim_alignment:
+                g["dkim_alignment_results"].add(rec.dkim_alignment)
+            if rec.spf_alignment:
+                g["spf_alignment_results"].add(rec.spf_alignment)
             if rec.disposition:
                 g["dispositions"].add(rec.disposition)
             g["total_count"] += rec.count
@@ -471,6 +481,8 @@ async def triage_queue(
             envelope_from=sorted(g["envelope_from"]),
             dkim_results=sorted(g["dkim_results"]),
             spf_results=sorted(g["spf_results"]),
+            dkim_alignment_results=sorted(g["dkim_alignment_results"]),
+            spf_alignment_results=sorted(g["spf_alignment_results"]),
             dispositions=sorted(g["dispositions"]),
             total_count=g["total_count"],
             report_count=len(g["report_ids"]),
@@ -481,6 +493,43 @@ async def triage_queue(
     ]
     items.sort(key=lambda i: i.total_count, reverse=True)
     return items
+
+
+@app.post("/api/triage/recommendation", response_model=TriageRecommendationResponse)
+async def triage_recommendation(
+    item: TriageRecommendationRequest,
+    _user: str = Depends(require_auth),
+):
+    """Return a read-only recommendation backed by the domain's current SPF.
+
+    DNS evaluation runs off the event loop and is cached briefly. The client
+    still requires an explicit classification action from the user.
+    """
+    evaluation = await asyncio.to_thread(
+        evaluate_spf_cached, item.source_ip, item.policy_domain
+    )
+    result = build_recommendation(
+        source_ip=item.source_ip,
+        policy_domain=item.policy_domain,
+        header_from=item.header_from,
+        envelope_from=item.envelope_from,
+        dkim_results=item.dkim_results,
+        spf_results=item.spf_results,
+        dkim_alignment_results=item.dkim_alignment_results,
+        spf_alignment_results=item.spf_alignment_results,
+        dispositions=item.dispositions,
+        evaluation=evaluation,
+    )
+    return TriageRecommendationResponse(
+        action=result.action,
+        confidence=result.confidence,
+        title=result.title,
+        reasons=result.reasons,
+        caveats=result.caveats,
+        checked_at=result.checked_at,
+        spf_domain=result.spf_domain,
+        spf_result=result.spf_result,
+    )
 
 
 # --- TLS Reports ---

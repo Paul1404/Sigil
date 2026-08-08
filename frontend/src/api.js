@@ -48,6 +48,21 @@ export const api = {
   getReport: (id) => request(`/reports/${id}`),
   getDomainHealth: () => request("/reports-domains/health"),
   getTriageQueue: () => request("/triage/queue"),
+  getTriageRecommendation: (item) =>
+    request("/triage/recommendation", {
+      method: "POST",
+      body: JSON.stringify({
+        source_ip: item.source_ip,
+        policy_domain: item.policy_domain,
+        header_from: item.header_from,
+        envelope_from: item.envelope_from,
+        dkim_results: item.dkim_results,
+        spf_results: item.spf_results,
+        dkim_alignment_results: item.dkim_alignment_results,
+        spf_alignment_results: item.spf_alignment_results,
+        dispositions: item.dispositions,
+      }),
+    }),
 
   // Source classifications
   getClassifications: (policy_domain) => {
