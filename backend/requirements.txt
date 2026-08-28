@@ -1,11 +1,11 @@
 fastapi==0.141.1
-uvicorn[standard]==0.52.1
+uvicorn[standard]==0.52.4
 sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
 alembic==1.19.1
 pydantic==2.13.4
 pydantic-settings==2.15.0
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 dnspython==2.8.0
 apscheduler==3.11.3
 cryptography==50.0.0
