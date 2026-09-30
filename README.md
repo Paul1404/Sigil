@@ -1,22 +1,31 @@
 # Sigil
 
-A self-hosted DMARC report viewer and email authentication dashboard. Connects to your IMAP mailbox, parses aggregate reports, and gives you a clear picture of your domain's email authentication health.
+A self-hosted dashboard for DMARC reports, SMTP TLS reports, and email
+authentication. Sigil collects report attachments from IMAP, groups sending
+sources, and helps distinguish legitimate alignment failures from spoofing.
+
+FastAPI and PostgreSQL on the backend, React on the frontend, packaged as one
+Docker image. [MIT licensed](LICENSE).
+
+![Sigil email authentication dashboard with synthetic report statistics](docs/screenshots/overview.png)
+
+This screenshot renders the real frontend with synthetic API fixtures and
+documentation-only IP addresses. It contains no mailbox contents or real sender
+data. The fixture preview does not test IMAP ingestion or production DNS.
+
+[Features](#features) · [Quick start](#quick-start-docker-compose) ·
+[Configuration](#configuration) · [License](#license)
 
 ## Features
 
-- **IMAP ingestion** — connects to any IMAP mailbox, pulls DMARC (RUA) and TLS-RPT attachments (`.xml`, `.xml.gz`, `.zip`, `.json`, `.json.gz`)
-- **Report parsing** — RFC 7489 DMARC aggregate reports and RFC 8460 TLS-RPT reports, fully parsed and stored
-- **Dashboard** — pass rates, timelines, top senders, domain overview
-- **DNS health checks** — MX, DMARC, SPF, DKIM, TLSA/DANE, MTA-STS, and TLS Reporting records with warnings and recommendations
-- **Detected domains** — domains from your reports appear on the DNS page for one-click health checks
-- **Background fetch** — automatic IMAP polling on a configurable interval (default: every 6 hours)
-- **Encryption at rest** — IMAP passwords encrypted with Fernet
-- **Single-container deploy** — one Docker image, bundled frontend, auto-runs migrations on startup
-
-<img width="2165" height="1283" alt="image" src="https://github.com/user-attachments/assets/f8b703d4-ebcc-4f11-b965-2375d8275a51" />
-
-
-## What it does
+- **IMAP ingestion** - connects to any IMAP mailbox, pulls DMARC (RUA) and TLS-RPT attachments (`.xml`, `.xml.gz`, `.zip`, `.json`, `.json.gz`)
+- **Report parsing** - RFC 7489 DMARC aggregate reports and RFC 8460 TLS-RPT reports, fully parsed and stored
+- **Dashboard** - pass rates, timelines, top senders, domain overview
+- **DNS health checks** - MX, DMARC, SPF, DKIM, TLSA/DANE, MTA-STS, and TLS Reporting records with warnings and recommendations
+- **Detected domains** - domains from your reports appear on the DNS page for one-click health checks
+- **Background fetch** - automatic IMAP polling on a configurable interval (default: every 6 hours)
+- **Encryption at rest** - IMAP passwords encrypted with Fernet
+- **Single-container deploy** - one Docker image, bundled frontend, auto-runs migrations on startup
 
 ## Quick Start (Docker Compose)
 
@@ -58,7 +67,7 @@ All configuration is through environment variables. See `.env.example` for the f
 | `POSTGRES_PASSWORD` | Yes | Password for the bundled PostgreSQL container |
 | `ENCRYPTION_KEY` | Yes | Fernet key for encrypting IMAP passwords at rest |
 | `ADMIN_PASSWORD` | Yes | Password to log into the dashboard |
-| `SECRET_KEY` | Yes | Signs JWT tokens — use a random string |
+| `SECRET_KEY` | Yes | Signs JWT tokens - use a random string |
 | `FETCH_INTERVAL_HOURS` | No | Hours between automatic IMAP fetches (default: `6`) |
 | `SIGIL_PORT` | No | Host port to expose (default: `8000`) |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins. Leave empty for same-origin |
@@ -164,4 +173,4 @@ frontend/
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

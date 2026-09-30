@@ -38,6 +38,10 @@ State clearly when authenticated, database, deployment, or live verification was
 
 ## Maintaining instructions
 
+Public screenshots belong in `docs/screenshots/`. Use synthetic reports and
+reserved documentation IP addresses. If the frontend uses API fixtures rather
+than a live backend, state that boundary explicitly in the README.
+
 Update `AGENTS.md` when verified, durable repository behavior changes. Keep it concise and
 move detailed explanations into `docs/`. Keep `CLAUDE.md` as the compatibility import
 unless Claude-specific guidance is genuinely required.
