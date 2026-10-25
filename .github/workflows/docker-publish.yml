@@ -12,7 +12,19 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: pip install -r backend/requirements.txt
+      - run: python -m unittest discover -s tests
+        working-directory: backend
+
   build-and-push:
+    needs: backend-tests
     runs-on: ubuntu-latest
 
     permissions:

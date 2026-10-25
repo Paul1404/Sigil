@@ -45,3 +45,8 @@ than a live backend, state that boundary explicitly in the README.
 Update `AGENTS.md` when verified, durable repository behavior changes. Keep it concise and
 move detailed explanations into `docs/`. Keep `CLAUDE.md` as the compatibility import
 unless Claude-specific guidance is genuinely required.
+
+## Readiness
+
+`/api/health` performs bounded, read-only dependency checks and returns 503 on
+failure with no connection details. Responses disable caching.
