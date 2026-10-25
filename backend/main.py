@@ -7,9 +7,9 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func, case, distinct
+from sqlalchemy import select, func, case, distinct, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -29,7 +29,7 @@ from classifier import (
     count_record_states,
 )
 from config import settings
-from database import get_db
+from database import get_db, engine
 from dns_checker import run_all_checks
 from encryption import encrypt_password
 from imap_fetcher import fetch_mailbox
@@ -124,7 +124,16 @@ async def auth_me(user: str = Depends(require_auth)):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    try:
+        async with asyncio.timeout(3):
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+        return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
+    except Exception:
+        return JSONResponse(
+            {"status": "unavailable"}, status_code=503,
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 # --- Dashboard ---
