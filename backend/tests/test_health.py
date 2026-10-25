@@ -9,14 +9,14 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.__aenter__ = AsyncMock(return_value=connection)
         context.__aexit__ = AsyncMock(return_value=False)
-        with patch("main.engine.connect", return_value=context):
+        with patch("main.engine", MagicMock(connect=MagicMock(return_value=context))):
             response = await health()
         connection.execute.assert_awaited_once()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
 
     async def test_failed_database_is_unavailable_without_details(self):
-        with patch("main.engine.connect", side_effect=RuntimeError("private URL")):
+        with patch("main.engine", MagicMock(connect=MagicMock(side_effect=RuntimeError("private URL")))):
             response = await health()
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.body, b'{"status":"unavailable"}')
