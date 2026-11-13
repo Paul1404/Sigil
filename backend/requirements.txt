@@ -5,7 +5,7 @@ asyncpg==0.31.0
 alembic==1.20.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 dnspython==2.9.0
 apscheduler==3.11.3
 cryptography==50.0.1
