@@ -9,9 +9,7 @@ Docker image. [MIT licensed](LICENSE).
 
 ![Sigil email authentication dashboard with synthetic report statistics](docs/screenshots/overview.png)
 
-This screenshot renders the real frontend with synthetic API fixtures and
-documentation-only IP addresses. It contains no mailbox contents or real sender
-data. The fixture preview does not test IMAP ingestion or production DNS.
+The screenshot uses synthetic report data.
 
 [Features](#features) · [Quick start](#quick-start-docker-compose) ·
 [Configuration](#configuration) · [License](#license)
