@@ -4,7 +4,7 @@ sqlalchemy[asyncio]==2.1.6
 asyncpg==0.32.0
 alembic==1.20.1
 pydantic==2.14.3
-pydantic-settings==2.15.0
+pydantic-settings==2.16.2
 python-dotenv==1.2.4
 dnspython==2.9.0
 apscheduler==3.11.3
